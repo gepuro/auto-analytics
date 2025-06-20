@@ -1,0 +1,36 @@
+{
+  "name": "Auto Analytics Development Environment",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "auto-analytics-dev",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "python.pythonPath": "/workspace/.venv/bin/python",
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash",
+            "args": ["-l"]
+          }
+        },
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "extensions": [
+    "ms-python.python",
+    "ms-azuretools.vscode-docker",
+    "ms-python.black-formatter",
+    "cweijan.vscode-postgresql-client2",
+    "ms-python.isort",
+    "ms-python.flake8",
+    "ms-python.mypy-type-checker"
+  ],
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:latest": {}
+  }
+}

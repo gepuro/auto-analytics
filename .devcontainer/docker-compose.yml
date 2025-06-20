@@ -1,0 +1,48 @@
+# Auto Analytics Development Environment Docker Compose
+
+services:
+  # Main development container
+  auto-analytics-dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    container_name: auto-analytics-dev
+    tty: true
+    environment:
+      PYTHONPATH: /workspace
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: analytics_db
+      DB_USER: analytics_user
+      DB_PASSWORD: analytics_password
+      MCP_SERVER_URL: http://localhost:8080
+    volumes:
+      - ..:/workspace
+    depends_on:
+      - postgres
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: auto-analytics-postgres
+    environment:
+      POSTGRES_DB: analytics_db
+      POSTGRES_USER: analytics_user
+      POSTGRES_PASSWORD: analytics_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - ../scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics_user -d analytics_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+networks:
+  default:
+    name: auto-analytics-dev-network
+    external: true
