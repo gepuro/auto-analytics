@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Analytics - レポート一覧</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .header-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .report-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .report-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .stats-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stats-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stats-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-view-report {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-view-report:hover {
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-delete {
+            color: #dc3545;
+            border: 1px solid #dc3545;
+            background: transparent;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-delete:hover {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .no-reports {
+            text-align: center;
+            padding: 3rem;
+            color: #6c757d;
+        }
+        
+        .no-reports i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .server-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .server-info small {
+            opacity: 0.8;
+        }
+        
+        .refresh-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            text-decoration: none;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-gradient">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-0">
+                        <i class="bi bi-graph-up-arrow me-2"></i>
+                        Auto Analytics
+                    </h1>
+                    <p class="mb-0 mt-2">データ分析レポート管理システム</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <a href="/" class="refresh-btn me-2">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        更新
+                    </a>
+                    <a href="/docs" class="refresh-btn" target="_blank">
+                        <i class="bi bi-book"></i>
+                        API Docs
+                    </a>
+                </div>
+            </div>
+            
+            <div class="server-info">
+                <div class="row">
+                    <div class="col-md-6">
+                        <small>
+                            <i class="bi bi-server me-1"></i>
+                            Server: {{ server_info.host }}:{{ server_info.port }}
+                        </small>
+                    </div>
+                    <div class="col-md-6">
+                        <small>
+                            <i class="bi bi-folder me-1"></i>
+                            Reports: {{ server_info.reports_dir }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number">{{ total_reports }}</div>
+                    <div class="stats-label">総レポート数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="total-size">計算中...</div>
+                    <div class="stats-label">総ファイルサイズ</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="latest-time">-</div>
+                    <div class="stats-label">最新レポート</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="status-indicator">
+                        <i class="bi bi-check-circle-fill text-success"></i>
+                    </div>
+                    <div class="stats-label">システム状態</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports List -->
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        利用可能なレポート
+                    </h2>
+                    <div>
+                        <button class="btn btn-outline-primary btn-sm" onclick="refreshReports()">
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                            更新
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="reports-container">
+                    {% if reports %}
+                        <div class="row">
+                            {% for report in reports %}
+                            <div class="col-lg-6 col-xl-4 mb-3">
+                                <div class="card report-card h-100 fade-in">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <h5 class="card-title mb-1">
+                                                <i class="bi bi-file-earmark-text me-1"></i>
+                                                {{ report.title }}
+                                            </h5>
+                                            <button class="btn btn-delete btn-sm" 
+                                                    onclick="deleteReport('{{ report.filename }}')"
+                                                    title="レポートを削除">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                        
+                                        <p class="card-text text-muted small mb-2">
+                                            <i class="bi bi-file-earmark me-1"></i>
+                                            {{ report.filename }}
+                                        </p>
+                                        
+                                        <div class="row text-center mb-3">
+                                            <div class="col-6">
+                                                <small class="text-muted">サイズ</small><br>
+                                                <span class="fw-bold">{{ report.size_formatted }}</span>
+                                            </div>
+                                            <div class="col-6">
+                                                <small class="text-muted">更新日時</small><br>
+                                                <span class="fw-bold">{{ report.modified }}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="d-grid gap-2">
+                                            <a href="{{ report.url }}" class="btn-view-report" target="_blank">
+                                                <i class="bi bi-eye"></i>
+                                                レポートを開く
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="no-reports">
+                            <i class="bi bi-inbox"></i>
+                            <h4>レポートがありません</h4>
+                            <p class="text-muted">まだレポートが生成されていません。<br>データ分析を実行してレポートを作成してください。</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Calculate statistics
+        document.addEventListener('DOMContentLoaded', function() {
+            const reports = {{ reports | tojson }};
+            
+            // Calculate total size
+            let totalSize = 0;
+            let latestTime = null;
+            
+            reports.forEach(report => {
+                totalSize += report.size;
+                if (!latestTime || report.modified_timestamp > latestTime) {
+                    latestTime = report.modified_timestamp;
+                }
+            });
+            
+            // Format total size
+            let sizeFormatted;
+            if (totalSize < 1024) {
+                sizeFormatted = totalSize + ' B';
+            } else if (totalSize < 1024 * 1024) {
+                sizeFormatted = (totalSize / 1024).toFixed(1) + ' KB';
+            } else {
+                sizeFormatted = (totalSize / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+            
+            document.getElementById('total-size').textContent = sizeFormatted;
+            
+            // Format latest time
+            if (latestTime) {
+                const date = new Date(latestTime * 1000);
+                const timeAgo = getTimeAgo(date);
+                document.getElementById('latest-time').textContent = timeAgo;
+            }
+        });
+        
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            
+            if (diffMins < 1) return '今';
+            if (diffMins < 60) return diffMins + '分前';
+            if (diffHours < 24) return diffHours + '時間前';
+            return diffDays + '日前';
+        }
+        
+        function refreshReports() {
+            location.reload();
+        }
+        
+        async function deleteReport(filename) {
+            if (!confirm(`レポート "${filename}" を削除しますか？この操作は取り消せません。`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/reports/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Show success message
+                    showAlert('success', `レポート "${filename}" を削除しました。`);
+                    // Refresh page after short delay
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    const error = await response.json();
+                    showAlert('danger', `削除に失敗しました: ${error.detail}`);
+                }
+            } catch (error) {
+                showAlert('danger', `削除中にエラーが発生しました: ${error.message}`);
+            }
+        }
+        
+        function showAlert(type, message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.top = '20px';
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.style.minWidth = '300px';
+            
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(alertDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            // Check if any input fields are focused (user might be interacting)
+            if (document.activeElement.tagName !== 'INPUT' && 
+                document.activeElement.tagName !== 'TEXTAREA') {
+                // Silently refresh the reports list
+                refreshReports();
+            }
+        }, 30000);
+        
+        // Health check
+        async function checkHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const health = await response.json();
+                
+                const indicator = document.getElementById('status-indicator');
+                if (response.ok) {
+                    indicator.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i>';
+                } else {
+                    indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning"></i>';
+                }
+            } catch (error) {
+                const indicator = document.getElementById('status-indicator');
+                indicator.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i>';
+            }
+        }
+        
+        // Check health every minute
+        setInterval(checkHealth, 60000);
+    </script>
+</body>
+</html>

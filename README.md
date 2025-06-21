@@ -45,12 +45,6 @@ uv sync
 
 ### Running the System
 
-#### Option 1: Start Both Services (Recommended)
-```bash
-# Automatically starts both services in separate terminals
-./scripts/start-both.sh
-```
-
 #### Option 2: Start Services Individually
 
 **AI Agent** (Generates reports):
