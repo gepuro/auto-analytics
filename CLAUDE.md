@@ -10,18 +10,43 @@ Auto Analytics is an AI-powered multi-agent system that democratizes data analys
 
 ### Core Components
 
-- **ADK Agent System**: Built on Google Agent Development Kit, the main agent (`auto-analytics-agent/agent.py`) orchestrates all interactions
-- **Multi-Agent Architecture**: Designed for specialized agents (NLP, Data Analyst, Report Generation) that coordinate through a shared context
+**🔌 Decoupled Architecture**: The system is designed with complete separation between analysis and display:
+
+- **AI Agent Service** (`auto-analytics-agent/`): 
+  - Built on Google Agent Development Kit
+  - Handles data analysis and HTML report generation
+  - Runs independently on port 8000
+  - Uses Gemini 2.5 Flash for natural language understanding and SQL generation
+  - Outputs HTML reports to shared `reports/` directory
+
+- **FastAPI Display Service** (`fastapi-server/`):
+  - Independent web server for report display and management
+  - Runs independently on port 9000
+  - Provides REST API and web interface for reports
+  - No direct coupling with AI agent
+
+- **File-based Communication**: Services communicate through shared `reports/` directory
 - **MCP Integration**: Uses Model Context Protocol for secure database access via PostgreSQL toolsets
-- **Gemini 2.5 Flash**: Primary AI model for natural language understanding, SQL generation, and insight extraction
+- **Multi-Agent Architecture**: Specialized agents (NLP, Data Analyst, Report Generation) coordinate through shared context
 
 ### Key Technologies
 
-- **Backend**: Python 3.11+, asyncio for concurrent operations
+**AI Agent Service**:
 - **AI Framework**: Google ADK, Gemini 2.5 Flash API
 - **Database**: PostgreSQL with MCP server for secure access
 - **Data Processing**: pandas, matplotlib, plotly for analysis and visualization
 - **Configuration**: YAML-based tool configuration in `config/tools.yaml`
+
+**FastAPI Display Service**:
+- **Web Framework**: FastAPI, Uvicorn
+- **Templates**: Jinja2 for HTML templating
+- **File Handling**: aiofiles for async file operations
+- **CORS**: Cross-origin resource sharing support
+
+**Shared Infrastructure**:
+- **Backend**: Python 3.11+, asyncio for concurrent operations
+- **Communication**: File-based through shared `reports/` directory
+- **Startup**: Cross-platform shell scripts for service management
 
 ## Development Commands
 
@@ -35,11 +60,41 @@ uv sync --group dev
 ```
 
 ### Running the System
+
+The system now uses a **decoupled architecture** with two independent services:
+
+#### Option 1: Start Both Services Together (Recommended)
 ```bash
-# Start the development UI
+# Automatically start both AI Agent and FastAPI server in separate terminals
+./scripts/start-both.sh
+```
+
+#### Option 2: Start Services Individually
+
+**AI Agent** (Generates reports):
+```bash
+# Start AI agent on port 8000
+./scripts/start-agent.sh
+
+# Or manually:
 cd /workspace
 adk web --port 8000
 ```
+
+**FastAPI Server** (Displays reports):
+```bash
+# Start FastAPI server on port 9000  
+./scripts/start-fastapi.sh
+
+# Or manually:
+cd fastapi-server
+python main.py --port 9000
+```
+
+#### Access URLs
+- **AI Agent Interface**: http://localhost:8000 (for data analysis and report generation)
+- **FastAPI Report Server**: http://localhost:9000 (for viewing and managing reports)
+- **API Documentation**: http://localhost:9000/api/docs
 
 ### Code Quality
 ```bash
@@ -157,3 +212,9 @@ MCP server configuration in `config/tools.yaml` defines:
 - All SQL operations should use parameterized queries to prevent injection
 - Analysis results should include data quality assessments and confidence scores
 - HTML report generation uses structured templates with embedded visualizations
+
+## ADK Reference Documentation
+
+For detailed ADK specifications and implementation guidance, refer to:
+- **ADK Documentation**: https://google.github.io/adk-docs/
+- **ADK Python Repository**: https://github.com/google/adk-python

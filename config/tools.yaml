@@ -14,6 +14,22 @@ tools:
     description: "PostgreSQL接続テスト"
     statement: SELECT 'Hello from PostgreSQL' as message, NOW() as timestamp
 
+  get-tables:
+    kind: postgres-sql
+    source: analytics-postgres
+    description: "利用可能なテーブル一覧を取得"
+    statement: SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name
+
+  get-table-schema:
+    kind: postgres-execute-sql
+    source: analytics-postgres
+    description: "指定されたテーブルのスキーマ情報を取得"
+
+  get-sample-data:
+    kind: postgres-execute-sql
+    source: analytics-postgres
+    description: "指定されたテーブルのサンプルデータを取得"
+
   execute-query:
     kind: postgres-execute-sql
     source: analytics-postgres
@@ -22,4 +38,7 @@ tools:
 toolsets:
   analytics-toolset:
     - test-connection
+    - get-tables
+    - get-table-schema
+    - get-sample-data
     - execute-query
