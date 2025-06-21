@@ -8,6 +8,22 @@ from typing import Dict, Any, Optional
 from google.adk.agents import Agent, SequentialAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParams
 
+# ワークフロー制御システムをインポート
+try:
+    from .workflow_controller import (
+        workflow_controller,
+        check_information_completeness_v2,
+        generate_user_questions,
+        integrate_user_feedback
+    )
+except ImportError:
+    # パッケージとしてではなく直接実行される場合の対応
+    import workflow_controller as wc_module
+    workflow_controller = wc_module.workflow_controller
+    check_information_completeness_v2 = wc_module.check_information_completeness_v2
+    generate_user_questions = wc_module.generate_user_questions
+    integrate_user_feedback = wc_module.integrate_user_feedback
+
 # シンプルなHTMLレポート生成関数を直接実装
 def generate_html_report_from_workflow(
     workflow_context: str,
@@ -156,11 +172,19 @@ def generate_html_report_from_workflow(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"analytics_report_{timestamp}.html"
         
-        # 保存先ディレクトリ確保
-        current_dir = Path(__file__).parent
-        workspace_root = current_dir.parent
-        reports_dir = workspace_root / "reports"
+        # 保存先ディレクトリ確保（より確実な方法）
+        try:
+            current_dir = Path(__file__).parent
+            workspace_root = current_dir.parent
+            reports_dir = workspace_root / "reports"
+        except:
+            # フォールバック: 絶対パスで指定
+            reports_dir = Path("/workspace/reports")
+        
+        # ディレクトリ作成と権限確認
         reports_dir.mkdir(exist_ok=True)
+        if not reports_dir.exists():
+            raise Exception(f"レポートディレクトリの作成に失敗: {reports_dir}")
         
         file_path = reports_dir / filename
         
@@ -175,9 +199,23 @@ def generate_html_report_from_workflow(
             insights_section=sections[4] if len(sections) > 4 else ""
         )
         
-        # ファイル保存
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
+        # ファイル保存（エラーハンドリング強化）
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # ファイル作成確認
+            if not file_path.exists():
+                raise Exception("ファイルの書き込みに失敗しました")
+            
+            actual_file_size = file_path.stat().st_size
+            
+        except PermissionError:
+            raise Exception(f"ファイル書き込み権限がありません: {file_path}")
+        except OSError as e:
+            raise Exception(f"ファイル書き込み中にOSエラー: {e}")
+        except Exception as e:
+            raise Exception(f"ファイル保存中にエラー: {e}")
         
         # 成功レスポンス
         response = {
@@ -190,7 +228,8 @@ def generate_html_report_from_workflow(
             "report_url": f"http://127.0.0.1:9000/reports/{filename}",
             "report_list_url": "http://127.0.0.1:9000/",
             "fastapi_instructions": "FastAPIサーバー (port 9000) を起動してアクセス: cd fastapi-server && python main.py",
-            "file_size": f"{len(html_content) / 1024:.1f} KB"
+            "file_size": f"{actual_file_size / 1024:.1f} KB",
+            "content_length": len(html_content)
         }
         
         return json.dumps(response, ensure_ascii=False, indent=2)
@@ -233,6 +272,100 @@ request_interpreter = Agent(
         "もしよろしければ、□□についてもう少し詳しく教えていただけますでしょうか？」"
     ),
     output_key="interpreted_request",
+)
+
+# 1.5 Information Gap Detector Agent - 情報不足検出エージェント
+information_gap_detector = Agent(
+    name="information_gap_detector",
+    model="gemini-2.5-flash-lite-preview-06-17",
+    description="分析リクエストの情報の完全性を評価し、追加情報が必要かどうかを判断する専門エージェント",
+    instruction=(
+        "あなたは分析リクエストの完全性チェック専門家です。\n"
+        "ユーザーからの分析リクエストを詳しく分析し、分析を実行するのに十分な情報があるかを判断してください。\n\n"
+        "**あなたの評価基準:**\n"
+        "以下の項目について情報の完全性をチェックし、不足している場合は「要確認」と判定してください：\n\n"
+        "1. **分析対象の明確性** (必須)\n"
+        "   - 何を分析したいかが具体的に明記されているか\n"
+        "   - 売上、顧客、商品、地域など対象が明確か\n"
+        "   - 例：「売上を見たい」→ 具体性不足、「2023年の商品別売上推移」→ 十分\n\n"
+        "2. **時間軸・期間の指定** (重要)\n"
+        "   - いつの期間のデータを分析したいかが明確か\n"
+        "   - 今月、先月、今年、昨年、特定期間など\n"
+        "   - 例：「最近の売上」→ 曖昧、「2023年1-6月の売上」→ 十分\n\n"
+        "3. **分析の粒度・レベル** (重要)\n"
+        "   - どのレベルで分析したいかが明確か\n"
+        "   - 日別、月別、商品別、地域別、顧客別など\n"
+        "   - 例：「売上分析」→ 粒度不明、「月別売上推移」→ 十分\n\n"
+        "4. **比較・条件の有無** (任意だが重要)\n"
+        "   - 前年同期比、前月比、特定条件での絞り込みなど\n"
+        "   - 特定の商品カテゴリ、地域、顧客セグメントなど\n\n"
+        "5. **出力形式の期待** (任意)\n"
+        "   - グラフ、表、ランキング、サマリーなど\n"
+        "   - 具体的な可視化要求があるか\n\n"
+        "**判定ルール:**\n"
+        "- 必須項目（1,2,3）がすべて明確 → 「情報十分」\n"
+        "- 必須項目のいずれかが不明確・曖昧 → 「要確認」\n"
+        "- 複数の解釈が可能な曖昧な表現 → 「要確認」\n\n"
+        "**出力形式:**\n"
+        "必ず以下のJSON形式で回答してください：\n"
+        "```json\n"
+        "{\n"
+        "  \"status\": \"sufficient\" または \"needs_clarification\",\n"
+        "  \"confidence_score\": 0.0-1.0,\n"
+        "  \"missing_info\": [\"不足している情報の項目\"],\n"
+        "  \"ambiguous_points\": [\"曖昧な部分の指摘\"],\n"
+        "  \"analysis_feasibility\": \"このまま分析可能かの評価\",\n"
+        "  \"recommendation\": \"分析続行 または 追加情報要求\"\n"
+        "}\n"
+        "```\n\n"
+        "**判定例:**\n"
+        "「先月の売上を教えて」→ needs_clarification（どの粒度？どの比較？）\n"
+        "「2023年12月の商品別売上推移を前年同月と比較」→ sufficient\n"
+        "「最近調子悪い商品を調べたい」→ needs_clarification（期間、基準が不明）"
+    ),
+    output_key="information_gap_analysis",
+)
+
+# 1.6 User Confirmation Agent - ユーザー確認エージェント  
+user_confirmation_agent = Agent(
+    name="user_confirmation_agent",
+    model="gemini-2.5-flash-lite-preview-06-17",
+    description="情報不足が検出された場合にユーザーに追加情報を求める質問を生成する専門エージェント",
+    instruction=(
+        "あなたはユーザーとの円滑なコミュニケーションを担当する専門エージェントです。\n"
+        "情報不足検出エージェントの分析結果を受けて、ユーザーに追加情報を求める質問を作成してください。\n\n"
+        "**あなたの作業手順:**\n"
+        "1. 前のエージェント（information_gap_detector）の出力から不足情報を特定\n"
+        "2. 元の分析リクエスト（interpreted_request）の内容を確認\n"
+        "3. 不足している具体的な項目について、選択肢付きの質問を作成\n"
+        "4. ユーザーが回答しやすい形式で質問を構成\n\n"
+        "**質問生成の重点項目:**\n"
+        "- **分析期間**: いつの期間を対象とするか（今月、先月、今年、昨年、特定期間など）\n"
+        "- **分析粒度**: どの単位で集計するか（日別、週別、月別、年別など）\n"
+        "- **分析対象**: 何を分析するか（全体、特定商品、特定地域、特定顧客層など）\n"
+        "- **比較軸**: 何と比較するか（前年同期、前月、目標値、比較なしなど）\n"
+        "- **出力形式**: どのような形で結果が欲しいか（グラフ、表、ランキングなど）\n\n"
+        "**質問フォーマット:**\n"
+        "```\n"
+        "分析のご依頼をいただき、ありがとうございます。\n\n"
+        "📊 **ご依頼の内容**: [元のリクエストを要約]\n\n"
+        "より正確で有用な分析を行うため、以下について教えていただけますでしょうか：\n\n"
+        "[項目別の具体的質問と選択肢]\n\n"
+        "これらの情報をお教えいただければ、詳細な分析レポートをお作りします。\n"
+        "```\n\n"
+        "**重要:**\n"
+        "- 必ず具体的な選択肢を提供（「いつ？」ではなく「1.今月 2.先月 3.今年」など）\n"
+        "- 1回の質問で複数の不明点を効率的に確認\n"
+        "- 親しみやすく、分かりやすい言葉を使用\n"
+        "- ユーザーの回答を待つ必要があることを明確に示す\n\n"
+        "**出力例:**\n"
+        "「📅 分析期間を教えてください：\n"
+        "1. 今月（2024年1月）\n"
+        "2. 先月（2023年12月）\n" 
+        "3. 今年度（2023年4月-2024年3月）\n"
+        "4. その他（具体的な期間をお教えください）」"
+    ),
+    output_key="user_confirmation_request",
 )
 
 # 2. Schema Explorer Agent - データベーススキーマの調査
@@ -446,49 +579,213 @@ html_report_generator = Agent(
     description="分析結果からHTMLレポートを生成し、アクセス可能なリンクを提供する専門エージェント",
     instruction=(
         "あなたはHTMLレポート作成の専門家です。\n"
-        "これまでのワークフロー結果を美しいHTMLレポートにまとめ、/workspace/reportsに保存してください。\n\n"
-        "**必須作業手順:**\n"
-        "1. ワークフロー全体のコンテキストを収集\n"
-        "2. `generate_html_report_from_workflow` ツールを使用してHTMLレポートを生成\n"
-        "3. レポートが /workspace/reports ディレクトリに保存されることを確認\n"
-        "4. http://127.0.0.1:9000/ でアクセス可能なリンクをユーザーに提供\n\n"
-        "**ツールの使用方法:**\n"
+        "これまでのワークフロー全体の結果を統合して、美しいHTMLレポートを作成し、/workspace/reportsに保存してください。\n\n"
+        "**重要: 必ずHTMLレポートを生成してください**\n\n"
+        "**作業手順:**\n"
+        "1. **コンテキスト収集**: これまでの全エージェントの出力結果を確認\n"
+        "2. **データ統合**: 各ステップの結果を構造化されたJSONに統合\n"
+        "3. **ツール実行**: `generate_html_report_from_workflow` を確実に実行\n"
+        "4. **結果確認**: HTMLファイルが正常に作成されたことを確認\n"
+        "5. **URL提供**: ユーザーがアクセス可能なリンクを提供\n\n"
+        "**ツール実行例（必須）:**\n"
         "```\n"
         "generate_html_report_from_workflow(\n"
-        "    workflow_context='{\"interpreted_request\": \"...\", \"schema_info\": \"...\", \"analysis_results\": \"...\"}',\n"
+        "    workflow_context='{\"interpreted_request\": \"[ここに分析リクエスト]\", \"schema_info\": \"[ここにスキーマ情報]\", \"analysis_results\": \"[ここに分析結果]\"}',\n"
         "    report_title=\"データ分析レポート\"\n"
         ")\n"
         "```\n\n"
-        "**workflow_contextに含めるデータ:**\n"
-        "- interpreted_request: 分析リクエストの解釈結果\n"
-        "- schema_info: データベーススキーマ情報\n"
-        "- sample_analysis: サンプルデータ分析結果\n"
-        "- sql_query_info: 生成・実行されたSQLクエリ\n"
-        "- query_execution_result: クエリ実行結果\n"
-        "- analysis_results: データ分析の洞察と結果\n\n"
-        "**成功時の応答例:**\n"
-        "「✅ HTMLレポートが正常に生成されました！\n\n"
-        "📊 レポート: [タイトル]\n"
-        "📁 保存場所: /workspace/reports/[ファイル名]\n"
-        "🌐 表示URL: http://127.0.0.1:9000/reports/[ファイル名]\n"
-        "📋 レポート一覧: http://127.0.0.1:9000/\n\n"
-        "FastAPIサーバー (port 9000) が起動していることを確認してアクセスしてください。」\n\n"
-        "**重要:** 必ずツールを実行してHTMLファイルを作成し、具体的なURLを提供してください。"
+        "**コンテキストに含める情報:**\n"
+        "- **interpreted_request**: request_interpreterの出力\n"
+        "- **information_gap_analysis**: information_gap_detectorの出力（あれば）\n"
+        "- **schema_info**: schema_explorerの出力\n"
+        "- **sample_analysis**: data_samplerの出力\n"
+        "- **sql_query_info**: sql_generatorの出力\n"
+        "- **query_execution_result**: sql_error_handlerの出力\n"
+        "- **analysis_results**: data_analyzerの出力\n\n"
+        "**エラー対応:**\n"
+        "- 一部のデータが不足していても、利用可能なデータでレポートを作成\n"
+        "- 最低限、分析リクエストと分析結果があればレポート生成を実行\n"
+        "- ツール実行に失敗した場合は、詳細なエラー情報を報告\n\n"
+        "**出力形式:**\n"
+        "```\n"
+        "✅ HTMLレポートを正常に生成しました！\n\n"
+        "📊 **レポート情報**:\n"
+        "- ファイル名: [生成されたファイル名]\n"
+        "- 保存場所: /workspace/reports/[ファイル名]\n"
+        "- ファイルサイズ: [サイズ]\n\n"
+        "🌐 **アクセス方法**:\n"
+        "- 直接URL: http://127.0.0.1:9000/reports/[ファイル名]\n"
+        "- レポート一覧: http://127.0.0.1:9000/\n\n"
+        "📝 FastAPIサーバー（ポート9000）を起動してアクセスしてください。\n"
+        "```\n\n"
+        "**絶対に守ること:**\n"
+        "1. 必ず `generate_html_report_from_workflow` ツールを実行する\n"
+        "2. ツール実行結果を確認し、成功/失敗を明確に報告する\n"
+        "3. 生成されたHTMLファイルのパスとURLを提供する"
     ),
     output_key="html_report_info",
 )
 
-# Sequential Workflow Agent - 全体のワークフロー管理
+# Conditional Workflow Controller - 条件分岐ワークフロー制御システム
+class ConditionalWorkflowController:
+    """
+    情報の完全性に基づいて動的にワークフローを制御するクラス
+    """
+    def __init__(self):
+        self.workflow_state = {
+            "needs_user_input": False,
+            "information_complete": False,
+            "current_step": "request_interpretation",
+            "user_input_requests": [],
+            "analysis_context": {}
+        }
+    
+    def determine_next_step(self, current_output, current_agent_name):
+        """
+        現在のエージェントの出力に基づいて次のステップを決定
+        """
+        # 情報不足検出エージェントの結果をチェック
+        if current_agent_name == "information_gap_detector":
+            try:
+                import json
+                if isinstance(current_output, str):
+                    gap_analysis = json.loads(current_output)
+                else:
+                    gap_analysis = current_output
+                
+                if gap_analysis.get("status") == "needs_clarification":
+                    self.workflow_state["needs_user_input"] = True
+                    self.workflow_state["information_complete"] = False
+                    return "user_confirmation_required"
+                else:
+                    self.workflow_state["information_complete"] = True
+                    return "schema_exploration"
+            except (json.JSONDecodeError, KeyError, AttributeError):
+                # JSONパースエラーの場合、テキスト内容で判断
+                if "needs_clarification" in str(current_output).lower() or "要確認" in str(current_output):
+                    self.workflow_state["needs_user_input"] = True
+                    return "user_confirmation_required"
+                else:
+                    self.workflow_state["information_complete"] = True
+                    return "schema_exploration"
+        
+        # ユーザー確認エージェントの結果をチェック
+        elif current_agent_name == "user_confirmation_agent":
+            self.workflow_state["user_input_requests"].append(current_output)
+            return "await_user_response"
+        
+        # 通常のシーケンシャルフロー
+        step_sequence = [
+            ("request_interpreter", "information_gap_detection"),
+            ("information_gap_detector", "conditional_branch"),
+            ("user_confirmation_agent", "await_user_response"),
+            ("schema_explorer", "data_sampling"),
+            ("data_sampler", "sql_generation"),
+            ("sql_generator", "sql_execution"),
+            ("sql_error_handler", "data_analysis"),
+            ("data_analyzer", "html_report_generation"),
+            ("html_report_generator", "workflow_complete")
+        ]
+        
+        for current, next_step in step_sequence:
+            if current_agent_name == current:
+                return next_step
+        
+        return "workflow_complete"
+
+# Workflow Router Agent - ワークフロー分岐制御エージェント
+workflow_router = Agent(
+    name="workflow_router",
+    model="gemini-2.5-flash-lite-preview-06-17",
+    description="情報の完全性評価結果に基づいてワークフローを制御する専門エージェント",
+    instruction=(
+        "あなたはワークフローの交通整理を担当するエージェントです。\n"
+        "情報不足検出エージェントの評価結果を受けて、次に進むべき手順を決定してください。\n\n"
+        "**あなたの判断基準:**\n"
+        "前のエージェント（information_gap_detector）の出力をチェックし、以下のように判定：\n\n"
+        "1. **情報十分（sufficient）の場合:**\n"
+        "   - output_key: \"workflow_continue\"\n"
+        "   - メッセージ: \"情報が十分に揃いました。データベース調査を開始します。\"\n\n"
+        "2. **情報不足（needs_clarification）の場合:**\n"
+        "   - output_key: \"user_input_required\"\n"
+        "   - メッセージ: \"追加情報が必要です。ユーザーに確認を求めます。\"\n\n"
+        "**出力形式:**\n"
+        "```json\n"
+        "{\n"
+        "  \"decision\": \"continue\" または \"request_input\",\n"
+        "  \"reason\": \"判断理由\",\n"
+        "  \"next_action\": \"次のアクション説明\",\n"
+        "  \"information_status\": \"sufficient\" または \"needs_clarification\"\n"
+        "}\n"
+        "```\n\n"
+        "**重要:** 必ずJSON形式で回答し、判断根拠を明確に示してください。"
+    ),
+    output_key="workflow_decision",
+)
+
+# User Input Handler Agent - ユーザー入力処理エージェント  
+user_input_handler = Agent(
+    name="user_input_handler",
+    model="gemini-2.5-flash-lite-preview-06-17",
+    description="ユーザーからの追加情報を受け取り、分析リクエストを完成させる専門エージェント",
+    instruction=(
+        "あなたはユーザーからの追加情報を受け取り、最初の分析リクエストと統合する専門家です。\n"
+        "ユーザー確認エージェントの質問に対するユーザーの回答を受けて、完全な分析リクエストを作成してください。\n\n"
+        "**あなたの作業手順:**\n"
+        "1. 元の分析リクエスト（interpreted_request）を確認\n"
+        "2. ユーザー確認エージェントが送った質問内容を確認\n"
+        "3. ユーザーからの回答を解析\n"
+        "4. すべての情報を統合して完全な分析リクエストを作成\n\n"
+        "**統合後の出力形式:**\n"
+        "```\n"
+        "【完成した分析リクエスト】\n"
+        "分析対象: [統合された対象]\n"
+        "分析期間: [明確化された期間]\n"
+        "分析粒度: [確定した粒度]\n"
+        "比較条件: [指定された比較]\n"
+        "出力形式: [要求された形式]\n\n"
+        "【分析概要】\n"
+        "[ユーザーが求めている分析の全体像を要約]\n\n"
+        "これで分析に必要な情報がすべて揃いました。データベース調査を開始します。\n"
+        "```\n\n"
+        "**重要:** 統合後は必ず十分な情報になるよう、不足部分は合理的な推定で補完してください。"
+    ),
+    output_key="completed_request",
+)
+
+# メインのデータ分析ワークフロー（修正版）
 data_analysis_workflow = SequentialAgent(
     name="data_analysis_workflow",
-    description="データ分析の完全なワークフローを段階的に実行し、HTMLレポートを生成するシーケンシャルエージェント",
+    description="情報の完全性チェックとユーザー確認を含む包括的データ分析ワークフロー",
     sub_agents=[
+        # Phase 1: リクエスト解釈と情報完全性チェック
         request_interpreter,
+        information_gap_detector,
+        
+        # Phase 2: 条件に応じた分岐処理（手動制御）
+        # 注：実際の分岐は外部制御ロジック or 条件付き実行で実装
+        user_confirmation_agent,  # 情報不足時のみ実行
+        
+        # Phase 3: 通常の分析ワークフロー
         schema_explorer,
         data_sampler,
         sql_generator,
         sql_error_handler,
         data_analyzer,
+        
+        # Phase 4: HTMLレポート生成
         html_report_generator,
     ],
 )
+
+# 情報十分時の直接分析ワークフロー（HTMLレポート生成を確実に含む）
+# 注: エージェントの重複参照を避けるため、コメントアウト
+# 必要な場合は別途エージェントインスタンスを作成する
+
+# direct_analysis_workflow = SequentialAgent(
+#     name="direct_analysis_workflow", 
+#     description="情報が十分な場合の直接分析ワークフロー（HTMLレポート生成付き）",
+#     sub_agents=[
+#         # 別のエージェントインスタンスが必要
+#     ],
+# )
