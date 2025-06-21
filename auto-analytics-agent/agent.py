@@ -1,56 +1,5 @@
-import datetime
-from zoneinfo import ZoneInfo
-
 from google.adk.agents import Agent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParams
-
-
-def get_weather(city: str) -> dict:
-    """Retrieves the current weather report for a specified city.
-
-    Args:
-        city (str): The name of the city for which to retrieve the weather report.
-
-    Returns:
-        dict: status and result or error msg.
-    """
-    if city.lower() == "new york":
-        return {
-            "status": "success",
-            "report": (
-                "The weather in New York is sunny with a temperature of 25 degrees"
-                " Celsius (77 degrees Fahrenheit)."
-            ),
-        }
-    else:
-        return {
-            "status": "error",
-            "error_message": f"Weather information for '{city}' is not available.",
-        }
-
-
-def get_current_time(city: str) -> dict:
-    """Returns the current time in a specified city.
-
-    Args:
-        city (str): The name of the city for which to retrieve the current time.
-
-    Returns:
-        dict: status and result or error msg.
-    """
-
-    if city.lower() == "new york":
-        tz_identifier = "America/New_York"
-    else:
-        return {
-            "status": "error",
-            "error_message": (f"Sorry, I don't have timezone information for {city}."),
-        }
-
-    tz = ZoneInfo(tz_identifier)
-    now = datetime.datetime.now(tz)
-    report = f'The current time in {city} is {now.strftime("%Y-%m-%d %H:%M:%S %Z%z")}'
-    return {"status": "success", "report": report}
 
 
 # PostgreSQL MCP Server接続設定
@@ -60,19 +9,37 @@ postgres_toolset = MCPToolset(
 
 
 root_agent = Agent(
-    name="auto_analytics_agent",
-    # model="gemini-2.0-flash",
+    name="data_analytics_agent",
     model="gemini-2.5-flash-lite-preview-06-17",
     description=(
-        "Agent to answer questions about the time and weather in a city, "
-        "and perform database analysis tasks on PostgreSQL."
+        "Specialized data analytics agent that democratizes data analysis through natural language interactions. "
+        "Performs comprehensive database analysis, SQL generation, statistical insights, and exploratory data analysis on PostgreSQL."
     ),
     instruction=(
-        "You are a helpful agent who can answer user questions about the time and weather in a city, "
-        "and perform database analysis tasks. You can access PostgreSQL database to retrieve user data, "
-        "analyze table schemas, test database connections, and execute SQL queries. "
-        "Use the appropriate tools based on the user's request - weather/time tools for weather/time queries, "
-        "and database tools for data analysis tasks."
+        "You are a specialized data analytics agent designed to democratize data analysis. Your core capabilities include:\n\n"
+        "**Data Analysis & SQL Generation:**\n"
+        "- Generate optimized SQL queries from natural language requests\n"
+        "- Perform exploratory data analysis and statistical computations\n"
+        "- Provide data quality assessments and validation\n"
+        "- Extract insights and identify patterns in data\n\n"
+        "**Analysis Approach:**\n"
+        "- Use non-deterministic exploratory analysis - dynamically determine next steps based on findings\n"
+        "- Generate hypotheses and provide validation strategies\n"
+        "- Offer multiple analytical perspectives on the same dataset\n"
+        "- Suggest relevant follow-up questions and deeper analysis opportunities\n\n"
+        "**Communication:**\n"
+        "- Explain complex analytical concepts in simple terms\n"
+        "- Provide actionable insights and recommendations\n"
+        "- Support both Japanese and English interactions\n"
+        "- Structure responses with clear methodology and confidence levels\n\n"
+        "**Security & Quality:**\n"
+        "- Always use parameterized queries to prevent SQL injection\n"
+        "- Validate data integrity before analysis\n"
+        "- Handle sensitive data with appropriate privacy considerations\n"
+        "- Provide comprehensive error handling and fallback strategies\n\n"
+        "**Available Tools:**\n"
+        "Use the PostgreSQL MCP toolset to: test connections, explore table schemas, retrieve data, and execute analytical queries. "
+        "Focus on delivering accurate, insightful, and actionable data analysis results."
     ),
-    tools=[get_weather, get_current_time, postgres_toolset],
+    tools=[postgres_toolset],
 )

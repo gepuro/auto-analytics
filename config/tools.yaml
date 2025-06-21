@@ -14,42 +14,6 @@ tools:
     description: "PostgreSQL接続テスト"
     statement: SELECT 'Hello from PostgreSQL' as message, NOW() as timestamp
 
-  get-users:
-    kind: postgres-sql
-    source: analytics-postgres
-    description: "ユーザー一覧を取得する"
-    statement: SELECT id, name, age, email FROM users ORDER BY id
-
-  get-tables:
-    kind: postgres-sql
-    source: analytics-postgres
-    description: "データベース内のテーブル一覧を取得する"
-    statement: |
-      SELECT 
-        schemaname as schema_name,
-        tablename as table_name,
-        tableowner as table_owner,
-        hasindexes as has_indexes,
-        hasrules as has_rules,
-        hastriggers as has_triggers
-      FROM pg_tables 
-      WHERE schemaname NOT IN ('information_schema', 'pg_catalog')
-      ORDER BY schemaname, tablename
-
-  get-table-schema:
-    kind: postgres-sql
-    source: analytics-postgres
-    description: "テーブルスキーマを取得する"
-    statement: |
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns 
-      WHERE table_name = $1
-      ORDER BY ordinal_position
-    parameters:
-      - name: table_name
-        type: string
-        description: "スキーマを取得するテーブル名"
-
   execute-query:
     kind: postgres-execute-sql
     source: analytics-postgres
@@ -58,7 +22,4 @@ tools:
 toolsets:
   analytics-toolset:
     - test-connection
-    - get-users
-    - get-tables
-    - get-table-schema
     - execute-query
