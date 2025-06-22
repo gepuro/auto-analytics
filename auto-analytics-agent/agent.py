@@ -10,10 +10,6 @@ except ImportError as e:
     print(f"❌ エージェントの読み込みに失敗: {e}")
     raise
 
-# PostgreSQL MCP Server接続設定（バックアップ用）
-postgres_toolset = MCPToolset(
-    connection_params=SseConnectionParams(url="http://localhost:5000/mcp/sse")
-)
 
 # メインエージェント - カスタムワークフローまたはLlmAgentを使用
 # workflow.pyで適切なエージェントが選択される

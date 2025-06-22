@@ -487,36 +487,6 @@ class ValidationUtils:
         return content
 
 
-def create_sample_report_data() -> Dict[str, Any]:
-    """Create sample report data for testing purposes."""
-    return {
-        'report_title': 'サンプル分析レポート',
-        'generation_time': datetime.now().strftime("%Y年%m月%d日 %H:%M:%S"),
-        'analysis_target': 'テストデータセット',
-        'request_summary': 'サンプルデータの分析を実行し、基本統計情報を取得する',
-        'schema_info': 'test_table (id: integer, name: varchar, value: numeric)',
-        'sql_query': 'SELECT name, AVG(value) as avg_value FROM test_table GROUP BY name ORDER BY avg_value DESC',
-        'data_table': {
-            'headers': ['商品名', '平均売上', '件数'],
-            'rows': [
-                ['商品A', '150,000', '25'],
-                ['商品B', '120,000', '18'],
-                ['商品C', '90,000', '12']
-            ]
-        },
-        'summary_stats': [
-            {'label': 'データ件数', 'value': '3'},
-            {'label': '平均売上 (平均)', 'value': '120,000'},
-            {'label': '総売上', 'value': '360,000'}
-        ],
-        'insights': '''分析結果から以下の知見が得られました：
-
-• 商品Aが最も高い平均売上を記録
-• 件数と売上に正の相関が見られる
-• 全体的に安定した売上パフォーマンス
-
-今後は商品Aの成功要因を他商品にも展開することを推奨します。'''
-    }
 
 
 # Export commonly used functions
@@ -524,6 +494,5 @@ __all__ = [
     'DataProcessor',
     'TextFormatter', 
     'FileUtils',
-    'ValidationUtils',
-    'create_sample_report_data'
+    'ValidationUtils'
 ]

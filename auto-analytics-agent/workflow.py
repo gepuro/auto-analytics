@@ -1,8 +1,3 @@
-import json
-import os
-import sys
-from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from google.adk.agents import Agent
@@ -10,268 +5,8 @@ from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParam
 
 from .custom_agent import AutoAnalyticsCustomAgent
 
-# ワークフロー制御システムをインポート
-try:
-    from .workflow_controller import (
-        check_information_completeness_v2,
-        generate_user_questions,
-        integrate_user_feedback,
-        workflow_controller,
-    )
-except ImportError:
-    # パッケージとしてではなく直接実行される場合の対応
-    import workflow_controller as wc_module
-
-    workflow_controller = wc_module.workflow_controller
-    check_information_completeness_v2 = wc_module.check_information_completeness_v2
-    generate_user_questions = wc_module.generate_user_questions
-    integrate_user_feedback = wc_module.integrate_user_feedback
-
-
-# シンプルなHTMLレポート生成関数を直接実装
-def generate_html_report_from_workflow(
-    workflow_context: str, report_title: Optional[str] = None
-) -> str:
-    """
-    ワークフローからHTMLレポートを生成する関数（自己完結版）
-
-    Args:
-        workflow_context: ワークフロー結果（JSON文字列）
-        report_title: レポートタイトル
-
-    Returns:
-        レポート生成結果（JSON文字列）
-    """
-    try:
-        # JSONパース
-        if isinstance(workflow_context, str):
-            context = json.loads(workflow_context)
-        else:
-            context = workflow_context
-
-        # ワークフローの各ステップの結果を抽出
-        analysis_data = {}
-        step_mappings = {
-            "interpreted_request": [
-                "interpreted_request",
-                "request_interpretation",
-                "user_request",
-            ],
-            "schema_info": ["schema_info", "database_schema", "table_info"],
-            "sample_analysis": ["sample_analysis", "data_sample", "sample_data"],
-            "sql_query_info": ["sql_query_info", "sql_query", "generated_sql"],
-            "query_execution_result": [
-                "query_execution_result",
-                "execution_result",
-                "query_result",
-            ],
-            "analysis_results": ["analysis_results", "data_analysis", "insights"],
-        }
-
-        for target_key, source_keys in step_mappings.items():
-            for source_key in source_keys:
-                if source_key in context:
-                    analysis_data[target_key] = context[source_key]
-                    break
-
-        # HTMLテンプレート（シンプル版）
-        html_template = """<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f8f9fa; }}
-        .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; margin: -40px -40px 30px -40px; border-radius: 12px 12px 0 0; }}
-        .section {{ margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea; }}
-        .section h3 {{ margin-top: 0; color: #495057; }}
-        .sql-code {{ background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 6px; font-family: 'Monaco', 'Consolas', monospace; overflow-x: auto; }}
-        .data-table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
-        .data-table th {{ background: #667eea; color: white; padding: 12px; text-align: left; }}
-        .data-table td {{ padding: 10px; border-bottom: 1px solid #dee2e6; }}
-        .insights {{ background: #e8f5e8; border-left-color: #28a745; }}
-        .metadata {{ font-size: 0.9em; color: #6c757d; margin-top: 30px; padding: 15px; background: #f1f3f4; border-radius: 6px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📊 {title}</h1>
-            <p>生成日時: {generation_time}</p>
-        </div>
-        
-        {request_section}
-        {schema_section}
-        {sql_section}
-        {data_section}
-        {insights_section}
-        
-        <div class="metadata">
-            <strong>📝 レポート情報:</strong><br>
-            生成システム: Auto Analytics AI Agent<br>
-            エンジン: Google ADK + Gemini 2.5 Flash<br>
-            レポート形式: HTML
-        </div>
-    </div>
-</body>
-</html>"""
-
-        # セクション生成
-        sections = []
-
-        if analysis_data.get("interpreted_request"):
-            sections.append(
-                f"""
-        <div class="section">
-            <h3>🎯 分析リクエスト</h3>
-            <p>{analysis_data['interpreted_request']}</p>
-        </div>"""
-            )
-
-        if analysis_data.get("schema_info"):
-            sections.append(
-                f"""
-        <div class="section">
-            <h3>🗄️ データベース情報</h3>
-            <p>{analysis_data['schema_info']}</p>
-        </div>"""
-            )
-
-        if analysis_data.get("sql_query_info"):
-            sql_query = analysis_data["sql_query_info"]
-            if isinstance(sql_query, dict):
-                sql_query = sql_query.get("query", str(sql_query))
-            sections.append(
-                f"""
-        <div class="section">
-            <h3>🔍 実行SQLクエリ</h3>
-            <div class="sql-code">{sql_query}</div>
-        </div>"""
-            )
-
-        if analysis_data.get("query_execution_result"):
-            result_data = analysis_data["query_execution_result"]
-            if isinstance(result_data, dict) and "data" in result_data:
-                data = result_data["data"]
-                if data and len(data) > 0:
-                    # テーブル作成
-                    headers = (
-                        list(data[0].keys())
-                        if isinstance(data[0], dict)
-                        else [f"Column {i+1}" for i in range(len(data[0]))]
-                    )
-                    table_html = '<table class="data-table"><thead><tr>'
-                    for header in headers:
-                        table_html += f"<th>{header}</th>"
-                    table_html += "</tr></thead><tbody>"
-
-                    for row in data[:10]:  # 最初の10行のみ表示
-                        table_html += "<tr>"
-                        for header in headers:
-                            value = (
-                                row.get(header, "")
-                                if isinstance(row, dict)
-                                else row[headers.index(header)]
-                            )
-                            table_html += f"<td>{value}</td>"
-                        table_html += "</tr>"
-                    table_html += "</tbody></table>"
-
-                    sections.append(
-                        f"""
-        <div class="section">
-            <h3>📈 クエリ実行結果</h3>
-            <p>データ件数: {len(data)} 件 {('(最初の10件を表示)' if len(data) > 10 else '')}</p>
-            {table_html}
-        </div>"""
-                    )
-
-        if analysis_data.get("analysis_results"):
-            sections.append(
-                f"""
-        <div class="section insights">
-            <h3>💡 分析結果・洞察</h3>
-            <p>{analysis_data['analysis_results']}</p>
-        </div>"""
-            )
-
-        # ファイル名とパス生成
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"analytics_report_{timestamp}.html"
-
-        # 保存先ディレクトリ確保（より確実な方法）
-        try:
-            current_dir = Path(__file__).parent
-            workspace_root = current_dir.parent
-            reports_dir = workspace_root / "reports"
-        except:
-            # フォールバック: 絶対パスで指定
-            reports_dir = Path("/workspace/reports")
-
-        # ディレクトリ作成と権限確認
-        reports_dir.mkdir(exist_ok=True)
-        if not reports_dir.exists():
-            raise Exception(f"レポートディレクトリの作成に失敗: {reports_dir}")
-
-        file_path = reports_dir / filename
-
-        # HTML生成
-        html_content = html_template.format(
-            title=report_title or "データ分析レポート",
-            generation_time=datetime.now().strftime("%Y年%m月%d日 %H:%M:%S"),
-            request_section=sections[0] if len(sections) > 0 else "",
-            schema_section=sections[1] if len(sections) > 1 else "",
-            sql_section=sections[2] if len(sections) > 2 else "",
-            data_section=sections[3] if len(sections) > 3 else "",
-            insights_section=sections[4] if len(sections) > 4 else "",
-        )
-
-        # ファイル保存（エラーハンドリング強化）
-        try:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
-
-            # ファイル作成確認
-            if not file_path.exists():
-                raise Exception("ファイルの書き込みに失敗しました")
-
-            actual_file_size = file_path.stat().st_size
-
-        except PermissionError:
-            raise Exception(f"ファイル書き込み権限がありません: {file_path}")
-        except OSError as e:
-            raise Exception(f"ファイル書き込み中にOSエラー: {e}")
-        except Exception as e:
-            raise Exception(f"ファイル保存中にエラー: {e}")
-
-        # 成功レスポンス
-        response = {
-            "success": True,
-            "message": "✅ HTMLレポートが正常に生成されました！",
-            "file_path": str(file_path),
-            "filename": filename,
-            "report_title": report_title or "データ分析レポート",
-            "generation_time": datetime.now().strftime("%Y年%m月%d日 %H:%M:%S"),
-            "report_url": f"http://127.0.0.1:9000/reports/{filename}",
-            "report_list_url": "http://127.0.0.1:9000/",
-            "fastapi_instructions": "FastAPIサーバー (port 9000) を起動してアクセス: cd fastapi-server && python main.py",
-            "file_size": f"{actual_file_size / 1024:.1f} KB",
-            "content_length": len(html_content),
-        }
-
-        return json.dumps(response, ensure_ascii=False, indent=2)
-
-    except Exception as e:
-        # エラーレスポンス
-        error_response = {
-            "success": False,
-            "error": str(e),
-            "message": f"❌ HTMLレポート生成中にエラーが発生しました: {str(e)}",
-        }
-        return json.dumps(error_response, ensure_ascii=False, indent=2)
-
+# HTMLレポート生成 - 既存ツールを使用
+from .tools.adk_report_tool import generate_html_report_from_workflow
 
 # PostgreSQL MCP Server接続設定
 postgres_toolset = MCPToolset(
@@ -370,11 +105,11 @@ user_confirmation_agent = Agent(
         "3. 不足している具体的な項目について、選択肢付きの質問を作成\n"
         "4. ユーザーが回答しやすい形式で質問を構成\n\n"
         "**質問生成の重点項目:**\n"
-        "- **分析期間**: いつの期間を対象とするか（今月、先月、今年、昨年、特定期間など）\n"
-        "- **分析粒度**: どの単位で集計するか（日別、週別、月別、年別など）\n"
-        "- **分析対象**: 何を分析するか（全体、特定商品、特定地域、特定顧客層など）\n"
-        "- **比較軸**: 何と比較するか（前年同期、前月、目標値、比較なしなど）\n"
-        "- **出力形式**: どのような形で結果が欲しいか（グラフ、表、ランキングなど）\n\n"
+        "- **分析期間**: いつの期間を対象とするか（今月、先月、今年、昨年、特定期間など）。指定がない場合は、直近1年のデータを利用\n"
+        "- **分析粒度**: どの単位で集計するか（日別、週別、月別、年別など）。指定がない場合は、日別の単位で集計\n"
+        "- **分析対象**: 何を分析するか（全体、特定商品、特定地域、特定顧客層など）。指定がない場合は、全体を分析\n"
+        "- **比較軸**: 何と比較するか（前年同期、前月、目標値、比較なしなど）指定がない場合は、比較なし\n"
+        "- **出力形式**: どのような形で結果が欲しいか（グラフ、表、ランキングなど）。指定がない場合は、表形式で出力\n\n"
         "**質問フォーマット:**\n"
         "```\n"
         "分析のご依頼をいただき、ありがとうございます。\n\n"
@@ -656,137 +391,53 @@ html_report_generator = Agent(
     output_key="html_report_info",
 )
 
-
-# Conditional Workflow Controller - 条件分岐ワークフロー制御システム
-class ConditionalWorkflowController:
-    """
-    情報の完全性に基づいて動的にワークフローを制御するクラス
-    """
-
-    def __init__(self):
-        self.workflow_state = {
-            "needs_user_input": False,
-            "information_complete": False,
-            "current_step": "request_interpretation",
-            "user_input_requests": [],
-            "analysis_context": {},
-        }
-
-    def determine_next_step(self, current_output, current_agent_name):
-        """
-        現在のエージェントの出力に基づいて次のステップを決定
-        """
-        # 情報不足検出エージェントの結果をチェック
-        if current_agent_name == "information_gap_detector":
-            try:
-                import json
-
-                if isinstance(current_output, str):
-                    gap_analysis = json.loads(current_output)
-                else:
-                    gap_analysis = current_output
-
-                if gap_analysis.get("status") == "needs_clarification":
-                    self.workflow_state["needs_user_input"] = True
-                    self.workflow_state["information_complete"] = False
-                    return "user_confirmation_required"
-                else:
-                    self.workflow_state["information_complete"] = True
-                    return "schema_exploration"
-            except (json.JSONDecodeError, KeyError, AttributeError):
-                # JSONパースエラーの場合、テキスト内容で判断
-                if "needs_clarification" in str(
-                    current_output
-                ).lower() or "要確認" in str(current_output):
-                    self.workflow_state["needs_user_input"] = True
-                    return "user_confirmation_required"
-                else:
-                    self.workflow_state["information_complete"] = True
-                    return "schema_exploration"
-
-        # ユーザー確認エージェントの結果をチェック
-        elif current_agent_name == "user_confirmation_agent":
-            self.workflow_state["user_input_requests"].append(current_output)
-            return "await_user_response"
-
-        # 通常のシーケンシャルフロー
-        step_sequence = [
-            ("request_interpreter", "information_gap_detection"),
-            ("information_gap_detector", "conditional_branch"),
-            ("user_confirmation_agent", "await_user_response"),
-            ("schema_explorer", "data_sampling"),
-            ("data_sampler", "sql_generation"),
-            ("sql_generator", "sql_execution"),
-            ("sql_error_handler", "data_analysis"),
-            ("data_analyzer", "html_report_generation"),
-            ("html_report_generator", "workflow_complete"),
-        ]
-
-        for current, next_step in step_sequence:
-            if current_agent_name == current:
-                return next_step
-
-        return "workflow_complete"
-
-
-# Workflow Router Agent - ワークフロー分岐制御エージェント
-workflow_router = Agent(
-    name="workflow_router",
+# 9. Phase Coordinator Agent - 次フェーズの動的判定
+phase_coordinator = Agent(
+    name="phase_coordinator",
     model="gemini-2.5-flash-lite-preview-06-17",
-    description="情報の完全性評価結果に基づいてワークフローを制御する専門エージェント",
+    description="現在のワークフロー状況を分析し、次に実行すべき最適なフェーズを動的に判定する専門エージェント",
     instruction=(
-        "あなたはワークフローの交通整理を担当するエージェントです。\n"
-        "情報不足検出エージェントの評価結果を受けて、次に進むべき手順を決定してください。\n\n"
-        "**あなたの判断基準:**\n"
-        "前のエージェント（information_gap_detector）の出力をチェックし、以下のように判定：\n\n"
-        "1. **情報十分（sufficient）の場合:**\n"
-        '   - output_key: "workflow_continue"\n'
-        '   - メッセージ: "情報が十分に揃いました。データベース調査を開始します。"\n\n'
-        "2. **情報不足（needs_clarification）の場合:**\n"
-        '   - output_key: "user_input_required"\n'
-        '   - メッセージ: "追加情報が必要です。ユーザーに確認を求めます。"\n\n'
-        "**出力形式:**\n"
+        "あなたはワークフロー制御の専門家です。\n"
+        "現在のセッション状態を分析し、次に実行すべき最適なフェーズを判定してください。\n\n"
+        "**利用可能なフェーズ:**\n"
+        "1. **request_interpreter** - ユーザーリクエストの解釈\n"
+        "2. **information_gap_detector** - 情報完全性の評価\n"
+        "3. **user_confirmation_agent** - ユーザーへの確認質問\n"
+        "4. **schema_explorer** - データベーススキーマ調査\n"
+        "5. **data_sampler** - サンプルデータ確認\n"
+        "6. **sql_generator** - SQLクエリ生成\n"
+        "7. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
+        "8. **data_analyzer** - データ分析と洞察抽出\n"
+        "9. **html_report_generator** - HTMLレポート生成\n\n"
+        "**判定基準:**\n"
+        "- **完了済みフェーズ**: 重複実行を避ける\n"
+        "- **エラー状況**: SQLエラー時は再生成や修正を優先\n"
+        "- **データ複雑性**: 簡単なクエリはサンプリングをスキップ\n"
+        "- **情報完全性**: 不足時はユーザー確認を優先\n"
+        "- **効率性**: 最短経路での目標達成\n\n"
+        "**特別な判定結果:**\n"
+        "- **user_confirmation** - ユーザー入力が必要\n"
+        "- **complete** - ワークフロー完了\n"
+        "- **retry_[フェーズ名]** - 現在フェーズの再実行\n\n"
+        "**出力形式（必須JSON）:**\n"
         "```json\n"
         "{\n"
-        '  "decision": "continue" または "request_input",\n'
-        '  "reason": "判断理由",\n'
-        '  "next_action": "次のアクション説明",\n'
-        '  "information_status": "sufficient" または "needs_clarification"\n'
+        '  "next_phase": "フェーズ名またはuser_confirmation/complete",\n'
+        '  "reason": "判定理由の説明",\n'
+        '  "confidence": 0.0-1.0,\n'
+        '  "skip_phases": ["スキップ可能なフェーズのリスト"],\n'
+        '  "auto_proceed": true/false,\n'
+        '  "estimated_remaining_phases": 数値\n'
         "}\n"
         "```\n\n"
-        "**重要:** 必ずJSON形式で回答し、判断根拠を明確に示してください。"
+        "**判定例:**\n"
+        "- 簡単なSELECTクエリ → data_samplerをスキップ\n"
+        "- SQLエラー発生 → sql_generatorで再生成\n"
+        "- 情報不足検出 → user_confirmationで確認\n"
+        "- 全フェーズ完了 → complete\n\n"
+        "**重要:** 必ずJSON形式で回答し、効率的なワークフロー実行を最優先してください。"
     ),
-    output_key="workflow_decision",
-)
-
-# User Input Handler Agent - ユーザー入力処理エージェント
-user_input_handler = Agent(
-    name="user_input_handler",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    description="ユーザーからの追加情報を受け取り、分析リクエストを完成させる専門エージェント",
-    instruction=(
-        "あなたはユーザーからの追加情報を受け取り、最初の分析リクエストと統合する専門家です。\n"
-        "ユーザー確認エージェントの質問に対するユーザーの回答を受けて、完全な分析リクエストを作成してください。\n\n"
-        "**あなたの作業手順:**\n"
-        "1. 元の分析リクエスト（interpreted_request）を確認\n"
-        "2. ユーザー確認エージェントが送った質問内容を確認\n"
-        "3. ユーザーからの回答を解析\n"
-        "4. すべての情報を統合して完全な分析リクエストを作成\n\n"
-        "**統合後の出力形式:**\n"
-        "```\n"
-        "【完成した分析リクエスト】\n"
-        "分析対象: [統合された対象]\n"
-        "分析期間: [明確化された期間]\n"
-        "分析粒度: [確定した粒度]\n"
-        "比較条件: [指定された比較]\n"
-        "出力形式: [要求された形式]\n\n"
-        "【分析概要】\n"
-        "[ユーザーが求めている分析の全体像を要約]\n\n"
-        "これで分析に必要な情報がすべて揃いました。データベース調査を開始します。\n"
-        "```\n\n"
-        "**重要:** 統合後は必ず十分な情報になるよう、不足部分は合理的な推定で補完してください。"
-    ),
-    output_key="completed_request",
+    output_key="phase_decision",
 )
 
 
@@ -801,6 +452,7 @@ sub_agents_dict = {
     "sql_error_handler": sql_error_handler,
     "data_analyzer": data_analyzer,
     "html_report_generator": html_report_generator,
+    "phase_coordinator": phase_coordinator,
 }
 
 

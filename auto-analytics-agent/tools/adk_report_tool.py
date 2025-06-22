@@ -9,7 +9,6 @@ ADKエージェントから呼び出し可能なHTMLレポート生成ツール�
 import json
 from typing import Dict, Any, Optional
 
-from .html_report_generator import HTMLReportGenerator
 from .simple_link_generator import create_simple_report_link
 
 
