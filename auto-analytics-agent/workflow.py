@@ -415,14 +415,19 @@ phase_coordinator = Agent(
         "- **データ複雑性**: 簡単なクエリはサンプリングをスキップ\n"
         "- **情報完全性**: 不足時はユーザー確認を優先\n"
         "- **効率性**: 最短経路での目標達成\n\n"
+        "**積極実行フェーズ（気軽に実行）:**\n"
+        "以下のフェーズは高いconfidence(0.8以上)で積極的に自動実行してください：\n"
+        "- **schema_explorer**: データベース構造の調査は常に有用\n"
+        "- **data_sampler**: サンプルデータの確認は分析精度向上に寄与\n"
+        "- **sql_generator**: SQLクエリ生成は分析の核心部分\n"
+        "- **sql_error_handler**: SQLエラー修正は確実な実行のために必要\n\n"
         "**特別な判定結果:**\n"
         "- **user_confirmation** - ユーザー入力が必要\n"
-        "- **complete** - ワークフロー完了\n"
         "- **retry_[フェーズ名]** - 現在フェーズの再実行\n\n"
         "**出力形式（必須JSON）:**\n"
         "```json\n"
         "{\n"
-        '  "next_phase": "フェーズ名またはuser_confirmation/complete",\n'
+        '  "next_phase": "フェーズ名またはuser_confirmation",\n'
         '  "reason": "判定理由の説明",\n'
         '  "confidence": 0.0-1.0,\n'
         '  "skip_phases": ["スキップ可能なフェーズのリスト"],\n'
@@ -431,10 +436,11 @@ phase_coordinator = Agent(
         "}\n"
         "```\n\n"
         "**判定例:**\n"
-        "- 簡単なSELECTクエリ → data_samplerをスキップ\n"
-        "- SQLエラー発生 → sql_generatorで再生成\n"
+        "- schema_explorer → confidence: 0.9, auto_proceed: true (常に実行)\n"
+        "- data_sampler → confidence: 0.8, auto_proceed: true (データ理解に重要)\n"
+        "- sql_generator → confidence: 0.9, auto_proceed: true (分析の核心)\n"
+        "- sql_error_handler → confidence: 0.8, auto_proceed: true (エラー修正必須)\n"
         "- 情報不足検出 → user_confirmationで確認\n"
-        "- 全フェーズ完了 → complete\n\n"
         "**重要:** 必ずJSON形式で回答し、効率的なワークフロー実行を最優先してください。"
     ),
     output_key="phase_decision",

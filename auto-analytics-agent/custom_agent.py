@@ -225,51 +225,28 @@ class AutoAnalyticsCustomAgent(BaseAgent):
                 ),
             )
 
-            try:
-                async for event in self.phase_coordinator.run_async(ctx):
-                    yield event
-            except Exception as e:
-                yield Event(
-                    author="auto_analytics_agent",
-                    content=Content(
-                        parts=[
-                            Part(
-                                text=f"❌ フェーズ判定でエラーが発生しました: {str(e)}"
-                            )
-                        ]
-                    ),
-                )
-                # フォールバック: 標準的な次のフェーズに進む
-                next_standard_phase = self._get_fallback_next_phase(current_phase)
-                ctx.session.state["phase_decision"] = json.dumps(
-                    {
-                        "next_phase": next_standard_phase,
-                        "reason": "エラー時のフォールバック",
-                        "auto_proceed": True,
-                        "confidence": 0.5,
-                    }
-                )
+            async for event in self.phase_coordinator.run_async(ctx):
+                yield event
 
             # 判定結果を取得
             phase_decision = ctx.session.state.get("phase_decision", "")
             next_phase_info = self._parse_phase_decision(phase_decision)
 
-            if not next_phase_info:
-                yield Event(
-                    author="auto_analytics_agent",
-                    content=Content(
-                        parts=[
-                            Part(
-                                text="❌ フェーズ判定に失敗しました。ワークフローを終了します。"
-                            )
-                        ]
-                    ),
-                )
-                break
-
             next_phase = next_phase_info.get("next_phase", "")
             auto_proceed = next_phase_info.get("auto_proceed", False)
+            confidence = next_phase_info.get("confidence", 0.0)
             reason = next_phase_info.get("reason", "")
+
+            # confidence >= 0.7 の場合は自動進行を有効化
+            if confidence >= 0.7:
+                auto_proceed = True
+                confidence_message = (
+                    f"🎯 高信頼度判定 (confidence: {confidence:.2f}) - 自動進行します"
+                )
+            else:
+                confidence_message = (
+                    f"🤔 低信頼度判定 (confidence: {confidence:.2f}) - 慎重に進行します"
+                )
 
             # 判定結果を報告
             yield Event(
@@ -279,6 +256,12 @@ class AutoAnalyticsCustomAgent(BaseAgent):
                         Part(text=f"📋 次のアクション: {next_phase} (理由: {reason})")
                     ]
                 ),
+            )
+
+            # confidence判定結果を報告
+            yield Event(
+                author="auto_analytics_agent",
+                content=Content(parts=[Part(text=confidence_message)]),
             )
 
             # 特殊な判定結果の処理
