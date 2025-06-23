@@ -92,62 +92,59 @@ information_gap_detector = Agent(
 )
 
 
-# 2. Schema Explorer Agent - データベーススキーマの調査
-schema_explorer = Agent(
-    name="schema_explorer",
+# 2. Table Explorer Agent - 分析に必要なテーブルの探索
+table_explorer = Agent(
+    name="table_explorer",
     model="gemini-2.5-flash-lite-preview-06-17",
     tools=[postgres_toolset],
-    description="データベースのテーブル構造を調査し、分析に必要なスキーマ情報を特定する専門エージェント",
+    description="データベース内のテーブルを探索し、分析に最適なテーブルを特定してスキーマとサンプルデータを確認する統合エージェント",
     instruction=(
-        "あなたはデータベースの探偵です。\n"
-        "分析に必要なデータがどこにあるかを調査し、分かりやすく報告してください。\n\n"
-        "**あなたの調査手順:**\n"
-        "1. まず `get-tables` ツールで利用可能なテーブル一覧を確認\n"
-        "2. 分析の目的に関連しそうなテーブルを見つける\n"
-        "3. 有望なテーブルについて `get-table-schema` ツールで詳細な構造を調査\n"
-        "4. 分析に最適なテーブルとデータ項目を提案\n\n"
-        "**get-table-schema の使用方法:**\n"
-        "SELECT column_name, data_type, is_nullable, column_default \n"
-        "FROM information_schema.columns \n"
-        "WHERE table_name = 'テーブル名' AND table_schema = 'public' \n"
-        "ORDER BY ordinal_position;\n\n"
-        "**報告スタイル:**\n"
-        "調査結果を自然な文章で報告してください。例：\n"
-        "「データベースを調査した結果、〇個のテーブルが見つかりました。\n"
-        "この中で、ご要望の分析に最も適しているのは『△△』テーブルです。\n"
-        "このテーブルには□□や◇◇といった項目があり、\n"
-        "〇〇の分析を行うのに必要なデータが揃っています。」\n\n"
-        "技術的な詳細も含めつつ、親しみやすい言葉で説明してください。"
+        "あなたはデータベース探索の専門家です。\n"
+        "分析要件に基づいて、最適なテーブルを見つけ出し、詳細な情報を提供してください。\n\n"
+        "**探索プロセス（ループ実行）:**\n"
+        "1. **テーブル一覧取得**: `get-tables` で全テーブルをリストアップ\n"
+        "2. **関連性評価**: 各テーブル名から分析要件との関連性を判定\n"
+        "3. **詳細調査ループ**: 関連性の高いテーブルを順次調査\n"
+        "   - `get-table-schema` でスキーマ情報を取得\n"
+        "   - `execute-query` でサンプルデータを確認（SELECT * FROM table LIMIT 5）\n"
+        "   - データの品質と適合性を評価\n"
+        "4. **最適テーブル選定**: 複数の候補から最も適したテーブルを決定\n\n"
+        "**評価基準:**\n"
+        "- テーブル名と分析要件の関連性\n"
+        "- 必要なカラムの存在\n"
+        "- データの品質（欠損値、データ型、値の範囲）\n"
+        "- レコード数とデータの鮮度\n"
+        "- 他テーブルとの結合可能性\n\n"
+        "**スキーマ取得クエリ:**\n"
+        "```sql\n"
+        "SELECT column_name, data_type, is_nullable, column_default\n"
+        "FROM information_schema.columns\n"
+        "WHERE table_name = 'テーブル名' AND table_schema = 'public'\n"
+        "ORDER BY ordinal_position;\n"
+        "```\n\n"
+        "**統合レポート形式:**\n"
+        "調査結果を包括的に報告してください：\n"
+        "```\n"
+        "【探索結果サマリー】\n"
+        "• 調査したテーブル数: X個\n"
+        "• 最適なテーブル: table_name\n"
+        "• 選定理由: [具体的な理由]\n\n"
+        "【テーブル詳細】\n"
+        "• カラム構成: [主要カラムとデータ型]\n"
+        "• レコード数: 約X件\n"
+        "• データ品質: [良好/注意点あり]\n"
+        "• サンプルデータの特徴: [簡潔な説明]\n\n"
+        "【分析への適用性】\n"
+        "• 必要データの充足度: X%\n"
+        "• 推奨される分析アプローチ: [具体的な提案]\n"
+        "```\n\n"
+        "**重要な注意事項:**\n"
+        "- 複数のテーブルを効率的に調査（最大5テーブルまで詳細確認）\n"
+        "- 各テーブルの調査結果を内部で比較評価\n"
+        "- 最終的に1つの統合レポートとして出力\n"
+        "- 技術的詳細と分かりやすさのバランスを保つ"
     ),
-    output_key="schema_info",
-)
-
-# 3. Data Sampler Agent - サンプルデータの確認
-data_sampler = Agent(
-    name="data_sampler",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    tools=[postgres_toolset],
-    description="選択されたテーブルのサンプルデータを取得し、データ品質と構造を評価する専門エージェント",
-    instruction=(
-        "あなたはデータの健康診断医です。\n"
-        "特定されたテーブルのサンプルデータを確認し、分析に使えるかどうかを分かりやすく報告してください。\n\n"
-        "**あなたの診断手順:**\n"
-        "1. 推奨されたテーブルから `get-sample-data` ツールでサンプルデータを取得\n"
-        "2. データの状態を詳しくチェック（欠損値、データ形式、値の範囲など）\n"
-        "3. 分析に必要なデータが揃っているか確認\n"
-        "4. データの特徴や傾向を観察\n\n"
-        "**get-sample-data の使用方法:**\n"
-        "SELECT * FROM テーブル名 LIMIT 10;\n\n"
-        "**診断レポートスタイル:**\n"
-        "健康診断の結果のように、データの状態を分かりやすく報告してください。例：\n"
-        "「データの健康状態を確認しました。\n"
-        "サンプルを見る限り、データは全体的に良好な状態です。\n"
-        "ただし、〇〇の項目で一部空白がありますが、分析には大きな影響はなさそうです。\n"
-        "△△の値は〇〇から□□の範囲で、◇◇のような傾向が見られます。\n"
-        "このデータでしたら、ご希望の分析を問題なく実行できそうです。」\n\n"
-        "親しみやすく、分かりやすい言葉で報告してください。"
-    ),
-    output_key="sample_analysis",
+    output_key="table_exploration_result",
 )
 
 # 4. SQL Generator Agent - SQLクエリの生成
@@ -361,12 +358,11 @@ phase_coordinator = Agent(
         "**利用可能なフェーズ:**\n"
         "1. **request_interpreter** - ユーザーリクエストの解釈\n"
         "2. **information_gap_detector** - 情報完全性の評価\n"
-        "3. **schema_explorer** - データベーススキーマ調査\n"
-        "4. **data_sampler** - サンプルデータ確認\n"
-        "5. **sql_generator** - SQLクエリ生成\n"
-        "6. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
-        "7. **data_analyzer** - データ分析と洞察抽出\n"
-        "8. **html_report_generator** - HTMLレポート生成\n\n"
+        "3. **table_explorer** - テーブル探索とスキーマ・サンプル確認\n"
+        "4. **sql_generator** - SQLクエリ生成\n"
+        "5. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
+        "6. **data_analyzer** - データ分析と洞察抽出\n"
+        "7. **html_report_generator** - HTMLレポート生成\n\n"
         "**判定基準:**\n"
         "- **完了済みフェーズ**: 重複実行を避ける\n"
         "- **エラー状況**: SQLエラー時は再生成や修正を優先\n"
@@ -375,8 +371,7 @@ phase_coordinator = Agent(
         "- **効率性**: 最短経路での目標達成\n\n"
         "**積極実行フェーズ（気軽に実行）:**\n"
         "以下のフェーズは高いconfidence(0.8以上)で積極的に自動実行してください：\n"
-        "- **schema_explorer**: データベース構造の調査は常に有用\n"
-        "- **data_sampler**: サンプルデータの確認は分析精度向上に寄与\n"
+        "- **table_explorer**: テーブル探索とデータ確認は分析の基盤\n"
         "- **sql_generator**: SQLクエリ生成は分析の核心部分\n"
         "- **sql_error_handler**: SQLエラー修正は確実な実行のために必要\n\n"
         "**特別な判定結果:**\n"
@@ -394,8 +389,7 @@ phase_coordinator = Agent(
         "}\n"
         "```\n\n"
         "**判定例:**\n"
-        "- schema_explorer → confidence: 0.9, auto_proceed: true (常に実行)\n"
-        "- data_sampler → confidence: 0.8, auto_proceed: true (データ理解に重要)\n"
+        "- table_explorer → confidence: 0.9, auto_proceed: true (分析の基盤)\n"
         "- sql_generator → confidence: 0.9, auto_proceed: true (分析の核心)\n"
         "- sql_error_handler → confidence: 0.8, auto_proceed: true (エラー修正必須)\n"
         "- 情報不足検出 → デフォルト値を使用して分析継続\n"
@@ -409,8 +403,7 @@ phase_coordinator = Agent(
 sub_agents_dict = {
     "request_interpreter": request_interpreter,
     "information_gap_detector": information_gap_detector,
-    "schema_explorer": schema_explorer,
-    "data_sampler": data_sampler,
+    "table_explorer": table_explorer,
     "sql_generator": sql_generator,
     "sql_error_handler": sql_error_handler,
     "data_analyzer": data_analyzer,
