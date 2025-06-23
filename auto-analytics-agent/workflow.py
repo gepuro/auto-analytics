@@ -91,47 +91,6 @@ information_gap_detector = Agent(
     output_key="information_gap_analysis",
 )
 
-# 1.6 User Confirmation Agent - ユーザー確認エージェント
-user_confirmation_agent = Agent(
-    name="user_confirmation_agent",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    description="情報不足が検出された場合にユーザーに追加情報を求める質問を生成する専門エージェント",
-    instruction=(
-        "あなたはユーザーとの円滑なコミュニケーションを担当する専門エージェントです。\n"
-        "情報不足検出エージェントの分析結果を受けて、ユーザーに追加情報を求める質問を作成してください。\n\n"
-        "**あなたの作業手順:**\n"
-        "1. 前のエージェント（information_gap_detector）の出力から不足情報を特定\n"
-        "2. 元の分析リクエスト（interpreted_request）の内容を確認\n"
-        "3. 不足している具体的な項目について、選択肢付きの質問を作成\n"
-        "4. ユーザーが回答しやすい形式で質問を構成\n\n"
-        "**質問生成の重点項目:**\n"
-        "- **分析期間**: いつの期間を対象とするか（今月、先月、今年、昨年、特定期間など）。指定がない場合は、直近1年のデータを利用\n"
-        "- **分析粒度**: どの単位で集計するか（日別、週別、月別、年別など）。指定がない場合は、日別の単位で集計\n"
-        "- **分析対象**: 何を分析するか（全体、特定商品、特定地域、特定顧客層など）。指定がない場合は、全体を分析\n"
-        "- **比較軸**: 何と比較するか（前年同期、前月、目標値、比較なしなど）指定がない場合は、比較なし\n"
-        "- **出力形式**: どのような形で結果が欲しいか（グラフ、表、ランキングなど）。指定がない場合は、表形式で出力\n\n"
-        "**質問フォーマット:**\n"
-        "```\n"
-        "分析のご依頼をいただき、ありがとうございます。\n\n"
-        "📊 **ご依頼の内容**: [元のリクエストを要約]\n\n"
-        "より正確で有用な分析を行うため、以下について教えていただけますでしょうか：\n\n"
-        "[項目別の具体的質問と選択肢]\n\n"
-        "これらの情報をお教えいただければ、詳細な分析レポートをお作りします。\n"
-        "```\n\n"
-        "**重要:**\n"
-        "- 必ず具体的な選択肢を提供（「いつ？」ではなく「1.今月 2.先月 3.今年」など）\n"
-        "- 1回の質問で複数の不明点を効率的に確認\n"
-        "- 親しみやすく、分かりやすい言葉を使用\n"
-        "- ユーザーの回答を待つ必要があることを明確に示す\n\n"
-        "**出力例:**\n"
-        "「📅 分析期間を教えてください：\n"
-        "1. 今月（2024年1月）\n"
-        "2. 先月（2023年12月）\n"
-        "3. 今年度（2023年4月-2024年3月）\n"
-        "4. その他（具体的な期間をお教えください）」"
-    ),
-    output_key="user_confirmation_request",
-)
 
 # 2. Schema Explorer Agent - データベーススキーマの調査
 schema_explorer = Agent(
@@ -402,18 +361,17 @@ phase_coordinator = Agent(
         "**利用可能なフェーズ:**\n"
         "1. **request_interpreter** - ユーザーリクエストの解釈\n"
         "2. **information_gap_detector** - 情報完全性の評価\n"
-        "3. **user_confirmation_agent** - ユーザーへの確認質問\n"
-        "4. **schema_explorer** - データベーススキーマ調査\n"
-        "5. **data_sampler** - サンプルデータ確認\n"
-        "6. **sql_generator** - SQLクエリ生成\n"
-        "7. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
-        "8. **data_analyzer** - データ分析と洞察抽出\n"
-        "9. **html_report_generator** - HTMLレポート生成\n\n"
+        "3. **schema_explorer** - データベーススキーマ調査\n"
+        "4. **data_sampler** - サンプルデータ確認\n"
+        "5. **sql_generator** - SQLクエリ生成\n"
+        "6. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
+        "7. **data_analyzer** - データ分析と洞察抽出\n"
+        "8. **html_report_generator** - HTMLレポート生成\n\n"
         "**判定基準:**\n"
         "- **完了済みフェーズ**: 重複実行を避ける\n"
         "- **エラー状況**: SQLエラー時は再生成や修正を優先\n"
         "- **データ複雑性**: 簡単なクエリはサンプリングをスキップ\n"
-        "- **情報完全性**: 不足時はユーザー確認を優先\n"
+        "- **情報完全性**: 不足時は適切なデフォルト値で分析を継続\n"
         "- **効率性**: 最短経路での目標達成\n\n"
         "**積極実行フェーズ（気軽に実行）:**\n"
         "以下のフェーズは高いconfidence(0.8以上)で積極的に自動実行してください：\n"
@@ -422,12 +380,12 @@ phase_coordinator = Agent(
         "- **sql_generator**: SQLクエリ生成は分析の核心部分\n"
         "- **sql_error_handler**: SQLエラー修正は確実な実行のために必要\n\n"
         "**特別な判定結果:**\n"
-        "- **user_confirmation** - ユーザー入力が必要\n"
+        "- **complete** - ワークフロー完了\n"
         "- **retry_[フェーズ名]** - 現在フェーズの再実行\n\n"
         "**出力形式（必須JSON）:**\n"
         "```json\n"
         "{\n"
-        '  "next_phase": "フェーズ名またはuser_confirmation",\n'
+        '  "next_phase": "フェーズ名またはcomplete",\n'
         '  "reason": "判定理由の説明",\n'
         '  "confidence": 0.0-1.0,\n'
         '  "skip_phases": ["スキップ可能なフェーズのリスト"],\n'
@@ -440,7 +398,7 @@ phase_coordinator = Agent(
         "- data_sampler → confidence: 0.8, auto_proceed: true (データ理解に重要)\n"
         "- sql_generator → confidence: 0.9, auto_proceed: true (分析の核心)\n"
         "- sql_error_handler → confidence: 0.8, auto_proceed: true (エラー修正必須)\n"
-        "- 情報不足検出 → user_confirmationで確認\n"
+        "- 情報不足検出 → デフォルト値を使用して分析継続\n"
         "**重要:** 必ずJSON形式で回答し、効率的なワークフロー実行を最優先してください。"
     ),
     output_key="phase_decision",
@@ -451,7 +409,6 @@ phase_coordinator = Agent(
 sub_agents_dict = {
     "request_interpreter": request_interpreter,
     "information_gap_detector": information_gap_detector,
-    "user_confirmation_agent": user_confirmation_agent,
     "schema_explorer": schema_explorer,
     "data_sampler": data_sampler,
     "sql_generator": sql_generator,

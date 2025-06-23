@@ -28,7 +28,6 @@ class AutoAnalyticsCustomAgent(BaseAgent):
     # サブエージェントのフィールド定義
     request_interpreter: Any = Field(default=None)
     information_gap_detector: Any = Field(default=None)
-    user_confirmation_agent: Any = Field(default=None)
     schema_explorer: Any = Field(default=None)
     data_sampler: Any = Field(default=None)
     sql_generator: Any = Field(default=None)
@@ -54,7 +53,6 @@ class AutoAnalyticsCustomAgent(BaseAgent):
             # サブエージェントのフィールドを設定
             request_interpreter=sub_agents["request_interpreter"],
             information_gap_detector=sub_agents["information_gap_detector"],
-            user_confirmation_agent=sub_agents["user_confirmation_agent"],
             schema_explorer=sub_agents["schema_explorer"],
             data_sampler=sub_agents["data_sampler"],
             sql_generator=sub_agents["sql_generator"],
@@ -87,76 +85,66 @@ class AutoAnalyticsCustomAgent(BaseAgent):
         async for event in self.information_gap_detector.run_async(ctx):
             yield event
 
-    async def _run_phase_3(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 3: ユーザー確認"""
-        yield Event(
-            author="auto_analytics_agent",
-            content=Content(
-                parts=[Part(text="❓ Phase 3: ユーザー確認質問を生成しています...")]
-            ),
-        )
-        async for event in self.user_confirmation_agent.run_async(ctx):
-            yield event
 
-    async def _run_phase_4(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 4: スキーマ探索"""
+    async def _run_phase_3(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 3: スキーマ探索"""
         yield Event(
             author="auto_analytics_agent",
             content=Content(
-                parts=[Part(text="🗄️ Phase 4: データベーススキーマを調査しています...")]
+                parts=[Part(text="🗄️ Phase 3: データベーススキーマを調査しています...")]
             ),
         )
         async for event in self.schema_explorer.run_async(ctx):
             yield event
 
-    async def _run_phase_5(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 5: サンプルデータ確認"""
+    async def _run_phase_4(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 4: サンプルデータ確認"""
         yield Event(
             author="auto_analytics_agent",
             content=Content(
-                parts=[Part(text="📊 Phase 5: サンプルデータを確認しています...")]
+                parts=[Part(text="📊 Phase 4: サンプルデータを確認しています...")]
             ),
         )
         async for event in self.data_sampler.run_async(ctx):
             yield event
 
-    async def _run_phase_6(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 6: SQL生成"""
+    async def _run_phase_5(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 5: SQL生成"""
         yield Event(
             author="auto_analytics_agent",
             content=Content(
-                parts=[Part(text="🔨 Phase 6: SQLクエリを生成しています...")]
+                parts=[Part(text="🔨 Phase 5: SQLクエリを生成しています...")]
             ),
         )
         async for event in self.sql_generator.run_async(ctx):
             yield event
 
-    async def _run_phase_7(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 7: SQL実行"""
+    async def _run_phase_6(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 6: SQL実行"""
         yield Event(
             author="auto_analytics_agent",
             content=Content(
-                parts=[Part(text="⚡ Phase 7: SQLクエリを実行しています...")]
+                parts=[Part(text="⚡ Phase 6: SQLクエリを実行しています...")]
             ),
         )
         async for event in self.sql_error_handler.run_async(ctx):
             yield event
 
-    async def _run_phase_8(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 8: データ分析"""
+    async def _run_phase_7(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 7: データ分析"""
         yield Event(
             author="auto_analytics_agent",
-            content=Content(parts=[Part(text="🧠 Phase 8: データを分析しています...")]),
+            content=Content(parts=[Part(text="🧠 Phase 7: データを分析しています...")]),
         )
         async for event in self.data_analyzer.run_async(ctx):
             yield event
 
-    async def _run_phase_9(self, ctx: InvocationContext) -> AsyncIterator[Event]:
-        """Phase 9: HTMLレポート生成"""
+    async def _run_phase_8(self, ctx: InvocationContext) -> AsyncIterator[Event]:
+        """Phase 8: HTMLレポート生成"""
         yield Event(
             author="auto_analytics_agent",
             content=Content(
-                parts=[Part(text="📄 Phase 9: HTMLレポートを生成しています...")]
+                parts=[Part(text="📄 Phase 8: HTMLレポートを生成しています...")]
             ),
         )
         async for event in self.html_report_generator.run_async(ctx):
@@ -176,13 +164,12 @@ class AutoAnalyticsCustomAgent(BaseAgent):
         phase_methods = {
             "request_interpreter": self._run_phase_1,
             "information_gap_detector": self._run_phase_2,
-            "user_confirmation_agent": self._run_phase_3,
-            "schema_explorer": self._run_phase_4,
-            "data_sampler": self._run_phase_5,
-            "sql_generator": self._run_phase_6,
-            "sql_error_handler": self._run_phase_7,
-            "data_analyzer": self._run_phase_8,
-            "html_report_generator": self._run_phase_9,
+            "schema_explorer": self._run_phase_3,
+            "data_sampler": self._run_phase_4,
+            "sql_generator": self._run_phase_5,
+            "sql_error_handler": self._run_phase_6,
+            "data_analyzer": self._run_phase_7,
+            "html_report_generator": self._run_phase_8,
         }
 
         # 最初は Phase 1 から開始
@@ -361,8 +348,7 @@ class AutoAnalyticsCustomAgent(BaseAgent):
         fallback_sequence = {
             "request_interpreter": "information_gap_detector",
             "information_gap_detector": "schema_explorer",
-            "user_confirmation_agent": "schema_explorer",
-            "schema_explorer": "sql_generator",  # data_samplerをスキップ
+            "schema_explorer": "data_sampler",
             "data_sampler": "sql_generator",
             "sql_generator": "sql_error_handler",
             "sql_error_handler": "data_analyzer",
