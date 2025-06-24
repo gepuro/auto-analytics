@@ -232,7 +232,6 @@ class AutoAnalyticsCustomAgent(BaseAgent):
             reason = next_phase_info.get("reason", "")
 
             # confidence >= 0.7 の場合は自動進行を有効化
-            print(f"ネクストフェーズ判定: {next_phase}, current_phase: {current_phase}")
             if next_phase == current_phase:
                 auto_proceed = False
                 confidence_message = (
