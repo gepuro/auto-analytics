@@ -1,17 +1,24 @@
 from typing import Any, Dict, Optional
 
-from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParams
+from google.adk.agents import Agent, BaseAgent, LlmAgent
 
-from .custom_agent import AutoAnalyticsCustomAgent
+from .sub_agent.table_explorer import (
+    data_retrieval_agent,
+    sample_data_explorer,
+    table_and_sameple_explorer,
+    table_explorer,
+    table_explorer_loop,
+)
 
 # HTMLレポート生成 - 既存ツールを使用
 from .tools.adk_report_tool import generate_html_report_from_workflow
+from .tools.mcptoolset import postgres_toolset
+
+# from .custom_agent import AutoAnalyticsCustomAgent
+
 
 # PostgreSQL MCP Server接続設定
-postgres_toolset = MCPToolset(
-    connection_params=SseConnectionParams(url="http://localhost:5000/mcp/sse")
-)
+
 
 # 1. Request Interpreter Agent - ユーザーリクエストの解釈
 request_interpreter = Agent(
@@ -91,176 +98,6 @@ information_gap_detector = Agent(
     output_key="information_gap_analysis",
 )
 
-
-# 2. Table Explorer Agent - 分析に必要なテーブルの探索
-table_explorer = Agent(
-    name="table_explorer",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    tools=[postgres_toolset],
-    description="データベース内のテーブルを探索し、分析に最適なテーブルを特定してスキーマとサンプルデータを確認する統合エージェント",
-    instruction=(
-        "あなたはデータベース探索の専門家です。\n"
-        "分析要件に基づいて、最適なテーブルを見つけ出し、詳細な情報を提供してください。\n\n"
-        "**探索プロセス（ループ実行）:**\n"
-        "1. **テーブル一覧取得**: `get-tables` で全テーブルをリストアップ\n"
-        "2. **関連性評価**: 各テーブル名から分析要件との関連性を判定\n"
-        "3. **詳細調査ループ**: 関連性の高いテーブルを順次調査\n"
-        "   - `get-table-schema` でスキーマ情報を取得\n"
-        "   - `execute-query` でサンプルデータを確認（SELECT * FROM table LIMIT 5）\n"
-        "   - データの品質と適合性を評価\n"
-        "4. **最適テーブル選定**: 複数の候補から最も適したテーブルを決定\n\n"
-        "**評価基準:**\n"
-        "- テーブル名と分析要件の関連性\n"
-        "- 必要なカラムの存在\n"
-        "- データの品質（欠損値、データ型、値の範囲）\n"
-        "- レコード数とデータの鮮度\n"
-        "- 他テーブルとの結合可能性\n\n"
-        "**スキーマ取得クエリ:**\n"
-        "```sql\n"
-        "SELECT column_name, data_type, is_nullable, column_default\n"
-        "FROM information_schema.columns\n"
-        "WHERE table_name = 'テーブル名' AND table_schema = 'public'\n"
-        "ORDER BY ordinal_position;\n"
-        "```\n\n"
-        "**統合レポート形式:**\n"
-        "調査結果を包括的に報告してください：\n"
-        "```\n"
-        "【探索結果サマリー】\n"
-        "• 調査したテーブル数: X個\n"
-        "• 最適なテーブル: table_name\n"
-        "• 選定理由: [具体的な理由]\n\n"
-        "【テーブル詳細】\n"
-        "• カラム構成: [主要カラムとデータ型]\n"
-        "• レコード数: 約X件\n"
-        "• データ品質: [良好/注意点あり]\n"
-        "• サンプルデータの特徴: [簡潔な説明]\n\n"
-        "【分析への適用性】\n"
-        "• 必要データの充足度: X%\n"
-        "• 推奨される分析アプローチ: [具体的な提案]\n"
-        "```\n\n"
-        "**重要な注意事項:**\n"
-        "- 複数のテーブルを効率的に調査（最大5テーブルまで詳細確認）\n"
-        "- 各テーブルの調査結果を内部で比較評価\n"
-        "- 最終的に1つの統合レポートとして出力\n"
-        "- 技術的詳細と分かりやすさのバランスを保つ"
-    ),
-    output_key="table_exploration_result",
-)
-
-# 4. SQL Generator Agent - SQLクエリの生成
-sql_generator = Agent(
-    name="sql_generator",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    description="分析要求とスキーマ情報に基づいて最適化されたSQLクエリを生成する専門エージェント",
-    instruction=(
-        "あなたはSQL職人です。\n"
-        "分析の要望、データベースの構造、データの状態を踏まえて、最適なSQLクエリを作成してください。\n\n"
-        "**あなたの作業方針:**\n"
-        "1. **安全性**: データを守るため、セキュアなクエリを作成\n"
-        "2. **効率性**: 素早く結果が得られる最適化されたクエリを設計\n"
-        "3. **正確性**: 求められている分析に正確に対応するクエリを構築\n"
-        "4. **分かりやすさ**: 後で見返しても理解できる構造にする\n"
-        "5. **互換性**: PostgreSQLとBigQueryの両方で動作するクエリを意識する\n\n"
-        "**データベース別の考慮事項:**\n"
-        "- **PostgreSQL**: EXTRACT、DATE_TRUNC、ILIKE、||（文字列結合）\n"
-        "- **BigQuery**: EXTRACT、DATE_TRUNC、REGEXP_CONTAINS、CONCAT（文字列結合）\n"
-        "- **共通関数**: COUNT、SUM、AVG、MIN、MAX、CASE WHEN、JOIN\n"
-        "- **日付処理**: 両DBで使える標準的な日付関数を優先使用\n"
-        "- **文字列処理**: 可能な限り標準SQL構文を使用\n\n"
-        "**分析パターンに応じたクエリ例:**\n"
-        "- **集計分析**: COUNT, AVG, SUM, MIN, MAX などの統計関数\n"
-        "- **時系列分析**: 日付でグループ化した推移分析（DATE_TRUNC使用）\n"
-        "- **比較分析**: 条件による分類・比較（CASE WHEN使用）\n"
-        "- **関連分析**: テーブルの結合による多角的分析\n\n"
-        "**SQLエラー対策:**\n"
-        "- テーブル名・カラム名は正確に記述\n"
-        "- データ型の変換は明示的に行う\n"
-        "- GROUP BYには集計対象外の全カラムを含める\n"
-        "- LIMITで結果セットのサイズを制御\n\n"
-        "**説明スタイル:**\n"
-        "作成したSQLクエリを自然な文章で説明してください。例：\n"
-        "「ご要望の分析を行うため、以下のSQLクエリを作成しました。\n"
-        "このクエリでは、〇〇テーブルから△△の条件でデータを抽出し、\n"
-        "□□ごとに集計して◇◇を計算しています。\n"
-        "PostgreSQLとBigQueryの両方で動作するよう、標準的なSQL構文を使用しています。\n"
-        "実行すると、〇〇、△△、□□の項目で結果が表示される予定です。」\n\n"
-        "SQLクエリも含めて、分かりやすく報告してください。"
-    ),
-    output_key="sql_query_info",
-)
-
-# 5. SQL Error Fixer Agent - SQLエラーの自動修正
-sql_error_fixer = Agent(
-    name="sql_error_fixer",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    description="SQLエラーを診断し、自動的に修正するエラー修正専門エージェント",
-    instruction=(
-        "あなたはSQLエラーの修理職人です。\n"
-        "エラーが発生したSQLクエリを診断し、正しく動作するように修正してください。\n\n"
-        "**あなたの診断・修正手順:**\n"
-        "1. エラーメッセージを詳しく分析\n"
-        "2. 元のSQLクエリとエラー内容を照合\n"
-        "3. PostgreSQL/BigQueryのどちらで実行されているかを考慮\n"
-        "4. エラーの根本原因を特定\n"
-        "5. 修正されたSQLクエリを生成\n\n"
-        "**よくあるエラーパターンと修正方法:**\n"
-        "- **構文エラー**: カンマ、括弧、引用符の不足・過多\n"
-        "- **テーブル名エラー**: 存在しないテーブル名、スキーマ名の不足\n"
-        "- **カラム名エラー**: 存在しないカラム名、GROUP BY漏れ\n"
-        "- **データ型エラー**: 型変換の不足、文字列と数値の混在\n"
-        "- **関数エラー**: DB固有関数の使用、引数の不正\n"
-        "- **JOIN エラー**: 結合条件の不備、テーブルエイリアスの問題\n\n"
-        "**データベース固有の修正:**\n"
-        "- **PostgreSQL**: ILIKE → UPPER(...) LIKE UPPER(...)\n"
-        "- **BigQuery**: || → CONCAT、文字列リテラルの型変換\n"
-        "- **共通対応**: 標準SQL構文への置き換え\n\n"
-        "**修正レポート形式:**\n"
-        "エラーの原因と修正内容を分かりやすく説明してください。例：\n"
-        "「SQLエラーの原因を調査しました。\n"
-        "問題は〇〇の部分で、△△というエラーが発生していました。\n"
-        "これは□□が原因でしたので、◇◇のように修正しました。\n"
-        "修正後のクエリは以下の通りです：\n"
-        "[修正されたSQL]\n"
-        "この修正により、PostgreSQLとBigQueryの両方で正常に動作するはずです。」\n\n"
-        "修正の理由も含めて、親しみやすく説明してください。"
-    ),
-    output_key="fixed_sql_info",
-)
-
-# 6. SQL Error Handler Agent - SQLエラー時の自動修正・再実行
-sql_error_handler = Agent(
-    name="sql_error_handler",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    tools=[postgres_toolset],
-    description="SQLエラー発生時に自動修正と再実行を行うエラーハンドリング専門エージェント",
-    instruction=(
-        "あなたはSQLエラー対応の調整役です。\n"
-        "SQLクエリでエラーが発生した場合、修正して再実行を行い、結果を報告してください。\n\n"
-        "**あなたの対応手順:**\n"
-        "1. `execute-query` ツールで最初のSQLクエリを実行\n"
-        "2. エラーが発生した場合、エラー内容を詳しく分析\n"
-        "3. 以下のパターンでエラーを自動修正:\n"
-        "   - 構文エラー: カンマ、括弧、引用符の修正\n"
-        "   - カラム名エラー: GROUP BY句の追加、カラム名の確認\n"
-        "   - 関数エラー: PostgreSQL/BigQuery互換関数への変換\n"
-        "   - データ型エラー: 型変換の追加\n"
-        "4. 修正したSQLで再実行（最大3回まで）\n"
-        "5. 成功した場合は結果を次のエージェントに渡す\n\n"
-        "**エラー修正の具体例:**\n"
-        "- `SELECT col1, COUNT(*) FROM table` → `SELECT col1, COUNT(*) FROM table GROUP BY col1`\n"
-        "- `WHERE col ILIKE '%text%'` → `WHERE UPPER(col) LIKE UPPER('%text%')`\n"
-        "- `SELECT col1 || col2` → `SELECT CONCAT(col1, col2)`\n"
-        "- `WHERE date_col > '2023-01-01'` → `WHERE date_col > CAST('2023-01-01' AS DATE)`\n\n"
-        "**報告スタイル:**\n"
-        "エラー対応の過程を分かりやすく報告してください。例：\n"
-        "「SQLクエリを実行しましたが、最初にエラーが発生しました。\n"
-        "エラー内容は『GROUP BY句が不足』でしたので、必要なカラムを追加して修正しました。\n"
-        "修正後のクエリで再実行した結果、正常にデータを取得できました。\n"
-        "〇〇件のデータが見つかり、分析の準備が整いました。」\n\n"
-        "成功時は結果データを、失敗時は詳細なエラー情報を報告してください。"
-    ),
-    output_key="query_execution_result",
-)
 
 # 7. Data Analyzer Agent - データ分析の実行
 data_analyzer = Agent(
@@ -347,69 +184,28 @@ html_report_generator = Agent(
     output_key="html_report_info",
 )
 
-# 9. Phase Coordinator Agent - 次フェーズの動的判定
-phase_coordinator = Agent(
-    name="phase_coordinator",
-    model="gemini-2.5-flash-lite-preview-06-17",
-    description="現在のワークフロー状況を分析し、次に実行すべき最適なフェーズを動的に判定する専門エージェント",
-    instruction=(
-        "あなたはワークフロー制御の専門家です。\n"
-        "現在のセッション状態を分析し、次に実行すべき最適なフェーズを判定してください。\n\n"
-        "**利用可能なフェーズ:**\n"
-        "1. **request_interpreter** - ユーザーリクエストの解釈\n"
-        "2. **information_gap_detector** - 情報完全性の評価\n"
-        "3. **table_explorer** - テーブル探索とスキーマ・サンプル確認\n"
-        "4. **sql_generator** - SQLクエリ生成\n"
-        "5. **sql_error_handler** - SQLクエリ実行とエラー修正\n"
-        "6. **data_analyzer** - データ分析と洞察抽出\n"
-        "7. **html_report_generator** - HTMLレポート生成\n\n"
-        "**判定基準:**\n"
-        "- **完了済みフェーズ**: 重複実行を避ける\n"
-        "- **エラー状況**: SQLエラー時は再生成や修正を優先\n"
-        "- **データ複雑性**: 簡単なクエリはサンプリングをスキップ\n"
-        "- **情報完全性**: 不足時は適切なデフォルト値で分析を継続\n"
-        "- **効率性**: 最短経路での目標達成\n\n"
-        "**積極実行フェーズ（気軽に実行）:**\n"
-        "以下のフェーズは高いconfidence(0.8以上)で積極的に自動実行してください：\n"
-        "- **table_explorer**: テーブル探索とデータ確認は分析の基盤\n"
-        "- **sql_generator**: SQLクエリ生成は分析の核心部分\n"
-        "- **sql_error_handler**: SQLエラー修正は確実な実行のために必要\n\n"
-        "**特別な判定結果:**\n"
-        "- **complete** - ワークフロー完了\n"
-        "**出力形式（必須JSON）:**\n"
-        "```json\n"
-        "{\n"
-        '  "next_phase": "フェーズ名またはcomplete",\n'
-        '  "reason": "判定理由の説明",\n'
-        '  "confidence": 0.0-1.0,\n'
-        '  "skip_phases": ["スキップ可能なフェーズのリスト"],\n'
-        '  "auto_proceed": true/false,\n'
-        '  "estimated_remaining_phases": 数値\n'
-        "}\n"
-        "```\n\n"
-        "**判定例:**\n"
-        "- table_explorer → confidence: 0.9, auto_proceed: true (分析の基盤)\n"
-        "- sql_generator → confidence: 0.9, auto_proceed: true (分析の核心)\n"
-        "- sql_error_handler → confidence: 0.8, auto_proceed: true (エラー修正必須)\n"
-        "- 情報不足検出 → デフォルト値を使用して分析継続\n"
-        "**重要:** 必ずJSON形式で回答し、効率的なワークフロー実行を最優先してください。"
-    ),
-    output_key="phase_decision",
-)
-
-
-# カスタムエージェント用のエージェント辞書
-sub_agents_dict = {
-    "request_interpreter": request_interpreter,
-    "information_gap_detector": information_gap_detector,
-    "table_explorer": table_explorer,
-    "sql_generator": sql_generator,
-    "sql_error_handler": sql_error_handler,
-    "data_analyzer": data_analyzer,
-    "html_report_generator": html_report_generator,
-    "phase_coordinator": phase_coordinator,
-}
-
 
 # カスタムエージェントを作成
-root_agent = AutoAnalyticsCustomAgent(sub_agents_dict)
+root_agent = LlmAgent(
+    name="auto_analytics_agent",
+    model="gemini-2.5-flash-lite-preview-06-17",
+    description="自動データ分析エージェント。ユーザーのリクエストを解釈し、必要なデータを探索・分析してHTMLレポートを生成します。",
+    instruction=(
+        "あなたは自動データ分析エージェントです。\n"
+        "ユーザーのリクエストを解釈し、必要なデータを探索・分析してHTMLレポートを生成します。\n"
+        "ユーザーに対して、現在どのフェーズにいるかを示してください\n\n"
+        "フェーズ1: ユーザーリクエストの解釈(request_interpreter)\n"
+        "フェーズ2: テーブル探索とスキーマ・サンプル確認(table_and_sameple_explorer)\n"
+        "フェーズ3: SQLクエリ生成、実行、エラー修正(data_retrieval_agent)\n"
+        "フェーズ4: データ分析と洞察抽出(data_analyzer)\n"
+        "フェーズ5: HTMLレポート生成(html_report_generator)\n"
+    ),
+    sub_agents=[
+        request_interpreter,
+        data_analyzer,
+        table_and_sameple_explorer,
+        data_retrieval_agent,
+        html_report_generator,
+    ],
+    tools=[postgres_toolset],
+)

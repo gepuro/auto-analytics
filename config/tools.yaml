@@ -21,19 +21,69 @@ tools:
     statement: SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name
 
   get-table-schema:
-    kind: postgres-execute-sql
+    kind: postgres-sql
     source: analytics-postgres
     description: "指定されたテーブルのスキーマ情報を取得"
+    statement: |
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_name = '{{.tableName}}' AND table_schema = 'public'
+    templateParameters:
+      - name: tableName
+        type: string
+        description: "スキーマ情報を取得するテーブル名"
 
   get-sample-data:
-    kind: postgres-execute-sql
+    kind: postgres-sql
     source: analytics-postgres
-    description: "指定されたテーブルのサンプルデータを取得"
+    description: |
+      指定されたテーブルのサンプルデータを取得
+      使用例:
+      {
+          "tableName": "members"
+      }
+    statement: |
+      SELECT *
+      FROM {{.tableName}}
+      LIMIT 10
+    templateParameters:
+      - name: tableName
+        type: string
+        description: "サンプルデータを取得するテーブル名"
+
+  select-columns-from-table:
+    kind: postgres-sql
+    source: analytics-postgres
+    description: |
+      指定されたテーブルから特定のカラムを選択して取得
+      使用例:
+      {
+          "tableName": "flights",
+          "columnNames": ["id", "name"]
+      }
+    statement: |
+      SELECT {{array .columnNames}} FROM {{.tableName}}
+    templateParameters:
+      - name: tableName
+        type: string
+        description: "データを取得するテーブル名"
+      - name: columnNames
+        type: array
+        description: "選択するカラム名のリスト"
+        items:
+          name: column
+          type: string
+          description: "選択するカラム名"
 
   execute-query:
-    kind: postgres-execute-sql
+    kind: postgres-sql
     source: analytics-postgres
     description: "動的SQLクエリを実行する"
+    statement: "{{.query}}"
+    templateParameters:
+      - name: query
+        type: string
+        description: "実行するSQLクエリ"
 
 toolsets:
   analytics-toolset:

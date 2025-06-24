@@ -5,6 +5,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParam
 try:
     # カスタムエージェント（動的ワークフロー）を優先的に使用
     from .workflow import root_agent
+
     print("✅ Auto Analytics エージェントを正常に読み込みました")
 except ImportError as e:
     print(f"❌ エージェントの読み込みに失敗: {e}")
