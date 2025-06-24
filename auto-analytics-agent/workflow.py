@@ -376,7 +376,6 @@ phase_coordinator = Agent(
         "- **sql_error_handler**: SQLエラー修正は確実な実行のために必要\n\n"
         "**特別な判定結果:**\n"
         "- **complete** - ワークフロー完了\n"
-        "- **retry_[フェーズ名]** - 現在フェーズの再実行\n\n"
         "**出力形式（必須JSON）:**\n"
         "```json\n"
         "{\n"

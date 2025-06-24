@@ -181,7 +181,7 @@ class AutoAnalyticsCustomAgent(BaseAgent):
 
         # 最初は Phase 1 から開始
         current_phase = "request_interpreter"
-        max_iterations = 20  # 無限ループ防止
+        max_iterations = 3  # 無限ループ防止
         iteration_count = 0
 
         yield Event(
@@ -282,12 +282,6 @@ class AutoAnalyticsCustomAgent(BaseAgent):
                     ),
                 )
                 break
-            elif next_phase.startswith("retry_"):
-                # リトライ指示の場合
-                retry_phase = next_phase.replace("retry_", "")
-                if retry_phase in phase_methods:
-                    current_phase = retry_phase
-                    continue
 
             # 自動進行チェック
             if not auto_proceed:
