@@ -14,6 +14,28 @@ from google.genai.types import Content, Part
 from pydantic import Field
 
 
+def parse_json_output(output: str) -> Dict[str, Any]:
+    # ```json
+    # {
+    # "next_phase": "request_interpreter",
+    # "reason": "ユーザーは分析を希望していますが、具体的な分析内容（どのデータに対してどのような分析をしたいか）がまだ不明確です。request_interpreterフェーズで、より詳細な情報を引き出す必要があります。",
+    # "confidence": 0.9,
+    # "skip_phases": [
+    #     "information_gap_detector",
+    #     "table_explorer",
+    #     "sql_generator",
+    #     "sql_error_handler",
+    #     "data_analyzer",
+    #     "html_report_generator"
+    # ],
+    # "auto_proceed": true,
+    # "estimated_remaining_phases": 6
+    # }
+    # ```
+    output = output.strip().strip("```json").strip("```")
+    return json.loads(output)
+
+
 class AutoAnalyticsCustomAgent(BaseAgent):
     """
     情報の完全性に基づいて自動的に次のステップに進むカスタムエージェント
@@ -82,7 +104,6 @@ class AutoAnalyticsCustomAgent(BaseAgent):
         )
         async for event in self.information_gap_detector.run_async(ctx):
             yield event
-
 
     async def _run_phase_3(self, ctx: InvocationContext) -> AsyncIterator[Event]:
         """Phase 3: テーブル探索"""
@@ -211,12 +232,20 @@ class AutoAnalyticsCustomAgent(BaseAgent):
             reason = next_phase_info.get("reason", "")
 
             # confidence >= 0.7 の場合は自動進行を有効化
-            if confidence >= 0.7:
+            print(f"ネクストフェーズ判定: {next_phase}, current_phase: {current_phase}")
+            if next_phase == current_phase:
+                auto_proceed = False
+                confidence_message = (
+                    "❗️ フェーズ判定が現在のフェーズと一致しました。"
+                    "自動進行は行われません。"
+                )
+            elif confidence >= 0.7:
                 auto_proceed = True
                 confidence_message = (
                     f"🎯 高信頼度判定 (confidence: {confidence:.2f}) - 自動進行します"
                 )
             else:
+                auto_proceed = False
                 confidence_message = (
                     f"🤔 低信頼度判定 (confidence: {confidence:.2f}) - 慎重に進行します"
                 )
@@ -329,34 +358,21 @@ class AutoAnalyticsCustomAgent(BaseAgent):
             "iteration_count": len(executed_phases),
         }
 
-    def _get_fallback_next_phase(self, current_phase: str) -> str:
-        """エラー時のフォールバック次フェーズを取得"""
-        fallback_sequence = {
-            "request_interpreter": "information_gap_detector",
-            "information_gap_detector": "table_explorer",
-            "table_explorer": "sql_generator",
-            "sql_generator": "sql_error_handler",
-            "sql_error_handler": "data_analyzer",
-            "data_analyzer": "html_report_generator",
-            "html_report_generator": "complete",
-        }
-        return fallback_sequence.get(current_phase, "complete")
-
     def _parse_phase_decision(self, decision_output: str) -> Dict[str, Any]:
         """フェーズ判定結果をパースする"""
         try:
-            if decision_output.strip().startswith("{"):
-                return json.loads(decision_output)
-            else:
-                # JSON以外の場合は手動パース
-                return {
-                    "next_phase": "complete",
-                    "reason": "JSON以外の出力のため終了",
-                    "auto_proceed": False,
-                }
+            return parse_json_output(decision_output)
         except Exception as e:
-            print(f"フェーズ判定パースエラー: {e}")
-            return None
+            print(f"JSONパースエラー: {e}")
+            # JSON以外の場合は手動パース
+            return {
+                "next_phase": "complete",
+                "reason": "JSONパースエラーのため終了",
+                "confidence": 0.0,
+                "auto_proceed": False,
+                "skip_phases": [],
+                "estimated_remaining_phases": 0,
+            }
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncIterator[Event]:
         """
