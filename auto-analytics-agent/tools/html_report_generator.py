@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, Template
 
-from .simple_link_generator import SimpleReportLinkGenerator, create_simple_report_link
+from .simple_link_generator import SimpleReportLinkGenerator
 
 
 class HTMLReportGenerator:

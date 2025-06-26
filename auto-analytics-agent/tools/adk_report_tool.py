@@ -10,7 +10,6 @@ import json
 from typing import Any, Dict, Optional
 
 from .html_report_generator import HTMLReportGenerator
-from .simple_link_generator import create_simple_report_link
 
 
 class ADKHTMLReportTool:
