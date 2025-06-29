@@ -2,10 +2,47 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import google.genai.types as types
 import markdown
-from google.adk.agents import Agent
+from google.adk.agents import Agent, BaseAgent, LlmAgent
 from google.adk.tools import ToolContext, load_artifacts
-from google.genai import types
+
+from ..utils.gemini import gemini
+
+
+def _process_data_to_markdown(data: Any) -> str:
+    """データをマークダウン形式に変換する共通処理"""
+    if isinstance(data, dict):
+        markdown_text = _convert_dict_to_markdown(data)
+    else:
+        markdown_text = str(data)
+
+    return markdown.markdown(markdown_text)
+
+
+def _convert_dict_to_markdown(data: Dict[str, Any]) -> str:
+    """辞書をLLMを使ってマークダウン形式に変換"""
+    try:
+        prompt = f"""
+以下の辞書データを、日本語で読みやすいマークダウン形式に変換してください。
+構造化された情報として整理し、見出しやリストを適切に使用してください。
+
+データ:
+{json.dumps(data, ensure_ascii=False, indent=2)}
+
+マークダウン形式で出力してください（```markdownタグは不要）:
+"""
+        response = gemini(
+            content=prompt,
+            model="gemini-2.5-flash-lite-preview-06-17",
+            max_output_tokens=10000,
+        )
+
+        return response.text.strip()
+
+    except Exception:
+        # LLM変換に失敗した場合はJSON形式でそのまま返す
+        return f"```json\n" f"{json.dumps(data, ensure_ascii=False, indent=2)}\n```"
 
 
 def create_html_report(
@@ -28,14 +65,19 @@ def create_html_report(
         generation_time = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
 
         # データの抽出と整形
-        interpreted_request = markdown.markdown(
-            workflow_data.get("interpreted_request", "分析リクエストが見つかりません")
+        interpreted_request_raw = workflow_data.get(
+            "interpreted_request", "分析リクエストが見つかりません"
         )
-        schema_info = markdown.markdown(workflow_data.get("schema_info", ""))
-        sql_query = markdown.markdown(workflow_data.get("sql_query_info", ""))
-        query_results = workflow_data.get("query_execution_result", {})
+        interpreted_request = _process_data_to_markdown(interpreted_request_raw)
 
-        analysis_results = markdown.markdown(workflow_data.get("analysis_results", ""))
+        table_explorer_info_raw = workflow_data.get("table_explorer_info", {})
+        table_explorer_info = _process_data_to_markdown(table_explorer_info_raw)
+
+        data_retrieval_result_raw = workflow_data.get("data_retrieval_result", "")
+        data_retrieval_result = _process_data_to_markdown(data_retrieval_result_raw)
+
+        analysis_results_raw = workflow_data.get("analysis_results", "")
+        analysis_results = _process_data_to_markdown(analysis_results_raw)
 
         # HTMLコンテンツの生成
         html_content = f"""
@@ -47,7 +89,8 @@ def create_html_report(
     <title>{report_title}</title>
     <style>
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                         Roboto, sans-serif;
             line-height: 1.6;
             color: #333;
             max-width: 1200px;
@@ -125,15 +168,15 @@ def create_html_report(
             <p>{interpreted_request}</p>
         </div>
         
-        {f'<div class="info-box"><h2>🗄️ データベーススキーマ情報</h2><pre>{schema_info}</pre></div>' if schema_info else ''}
-        
-        {f'<div class="sql-box"><h2>💻 実行されたSQLクエリ</h2><pre>{sql_query}</pre></div>' if sql_query else ''}
-        
-        <div>
-            <h2>📊 クエリ実行結果</h2>
-            {_format_query_results(query_results)}
+        <div class="info-box">
+            <h2>📊 テーブル情報</h2
+            <p>{table_explorer_info}</p>
         </div>
-        
+
+        <div class="info-box">
+            <h2>📊 データ取得結果</h2>
+            {data_retrieval_result}
+        </div>        
         <div class="analysis-section">
             <h2>🔍 分析結果</h2>
             {analysis_results}
@@ -156,7 +199,10 @@ def create_html_report(
 
         return {
             "success": True,
-            "message": f"HTMLレポートが http://localhost:9000/reports/{filename.split('/')[-1]} で表示可能です。",
+            "message": (
+                f"HTMLレポートが http://localhost:9000/reports/"
+                f"{filename.split('/')[-1]} で表示可能です。"
+            ),
             "filename": filename,
             "report_title": report_title,
             "generation_time": generation_time,
@@ -209,55 +255,18 @@ html_report_agent = Agent(
     tools=[create_html_report, load_artifacts],
     description="分析結果からHTMLレポートを生成し、ADK artifactとして保存する専門エージェント",
     instruction=(
-        "あなたはHTMLレポート作成の専門家です。\n"
-        "これまでのワークフロー全体の結果を統合して、美しいHTMLレポートを作成し、ADK artifactとして保存してください。\n\n"
-        "**重要: 必ずHTMLレポートを生成してください**\n\n"
-        "**作業手順:**\n"
-        "1. **コンテキスト収集**: これまでの全エージェントの出力結果を確認\n"
-        "2. **データ統合**: 各ステップの結果を辞書形式に統合\n"
-        "3. **ツール実行**: `create_html_report` を確実に実行\n"
-        "4. **結果確認**: Artifactが正常に保存されたことを確認\n"
-        "5. **結果報告**: 生成結果をユーザーに報告\n\n"
-        "**ツール実行例（必須）:**\n"
-        "```python\n"
-        "# ワークフローデータを辞書形式で準備\n"
-        "workflow_data = {\n"
-        '    "interpreted_request": "ユーザーの分析リクエスト",\n'
-        '    "sql_query_info": "実行されたSQLクエリ",\n'
-        '    "data_table": {"data": [...]},\n'
-        '    "javascript_chart": {"chart": [...]},\n'
-        '    "analysis_results": "データ分析の結果と洞察"\n'
+        "あなたはデータ分析の結果をHTMLレポートとしてまとめる専門家です。create_html_reportを必ず実行してください。\n"
+        "**実行順序:**\n"
+        "**1. これまでの分析結果を集約するためのworkflow_data辞書を作成してください。**\n"
+        "{\n"
+        "    'interpreted_request': 'ユーザーのリクエストをここに記述',\n"
+        "    'table_explorer_info': 'table_explorer_info',\n"
+        "    'data_retrieval_result': 'data_retrieval_result',\n"
+        "    'analysis_results': 'analysis_results'\n"
         "}\n\n"
-        "# レポート生成関数を呼び出し\n"
-        "result = create_html_report(\n"
-        "    workflow_data=workflow_data,\n"
-        '    report_title="データ分析レポート"\n'
-        ")\n"
-        "```\n\n"
-        "**収集すべき情報:**\n"
-        "- **interpreted_request**: request_interpreterの出力\n"
-        "- **sql_query_info**: data_retrivalで実行したクエリ\n"
-        "- **query_execution_result**: data_retrivalのクエリを実行した結果\n"
-        "- **analysis_results**: data_analyzerの出力\n\n"
-        "**エラー対応:**\n"
-        "- 一部のデータが不足していても、利用可能なデータでレポートを作成\n"
-        "- 最低限、分析リクエストと分析結果があればレポート生成を実行\n"
-        "- ツール実行に失敗した場合は、詳細なエラー情報を報告\n\n"
-        "**出力形式:**\n"
-        "```\n"
-        "- {artifact.message} のリンクを含めてください。\n"
-        "- HTMLレポートをArtifactとして正常に保存しました！\n\n"
-        "📊 **レポート情報**:\n"
-        "- Artifact名: [生成されたファイル名]\n"
-        "- レポートタイトル: [レポートタイトル]\n"
-        "- 生成時刻: [生成時刻]\n\n"
-        "📝 このレポートはADK Artifactとして保存されており、\n"
-        "   セッション内で再利用可能です。\n"
-        "```\n\n"
-        "**絶対に守ること:**\n"
-        "1. 必ず `create_html_report` ツールを実行する\n"
-        "2. ツール実行結果を確認し、成功/失敗を明確に報告する\n"
-        "3. {artifact.message} のリンクを含めて、生成されたHTMLレポートの情報を報告する\n"
+        "**2. create_html_report(workflow_data, report_title)を実行して、HTMLレポートを作成**\n"
+        "**3. 'artifact.message'に含まれるURLをユーザーに報告**\n\n"
+        "データが不足している場合は空文字列や空辞書を使用してもツールを必ず実行してください。"
     ),
     output_key="html_report_info",
 )

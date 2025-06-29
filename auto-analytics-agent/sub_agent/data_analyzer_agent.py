@@ -1,9 +1,9 @@
 from google.adk.agents import Agent, BaseAgent, LlmAgent, LoopAgent, SequentialAgent
+from google.adk.code_executors import VertexAiCodeExecutor
 
-from ..tools.exit_tool import exit_loop
 from ..tools.mcptoolset import postgres_toolset
 
-data_analyzer_agent = Agent(
+data_analyzer_agent = LlmAgent(
     name="data_analyzer",
     model="gemini-2.5-flash-lite-preview-06-17",
     description="実行されたクエリ結果から洞察を抽出し、分析レポートを作成する専門エージェント",
